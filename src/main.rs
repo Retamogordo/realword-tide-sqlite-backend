@@ -21,7 +21,7 @@ struct Author {
 }
 
 #[derive(Debug, Serialize, Deserialize, Validate)]
-pub struct UserReg {
+pub(crate) struct UserReg {
     pub username: String,
     #[validate(email)]
     pub email: String,
@@ -34,12 +34,21 @@ struct UserRegWrapped {
     user: UserReg,
 }
 
-#[derive(Debug, Deserialize)]
-struct UserUpdate {
-    email: String,
-    bio: String,
-    image: String,
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct UserUpdate {
+    pub username: Option<String>,
+    pub email: Option<String>,
+    pub password: Option<String>,
+    pub bio: Option<String>,
+    pub image: Option<String>,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+struct UserUpdateWrapped {
+//    user: String,
+    user: UserUpdate,
+}
+
 
 #[derive(Debug, Serialize, Deserialize)]
 struct UserWrapped {
@@ -80,6 +89,7 @@ struct Profile {
     username: String,    
     bio: String,    
     image: Option<String>,  
+    following: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -138,9 +148,9 @@ async fn main() -> tide::Result<()> {
 
     app.at("/api/users/login").post(login);
     app.at("/api/user").get(current_user);
-//    app.at("/api/user").put(update_user);
+    app.at("/api/user").put(update_user);
     app.at("/api/profiles/:username").get(profile);
-//    app.at("/api/profiles/*/follow").post(follow);
+    app.at("/api/profiles/:username/follow").post(follow);
 //    app.at("/api/profiles/*/follow").delete(unfollow);
 //    app.at("/api/articles").get(articles);
  
@@ -284,32 +294,56 @@ async fn profile(req: Request) -> tide::Result {
 }
 
 
-    async fn update_user(mut req: Request) -> tide::Result {
-        let update: UserUpdate = req.body_json().await?;
-        
-        let user = json! ({
-            "user": {    
-                "email": update.email,    
-                "token": "jwt.token.here",    
-                "username": "jake",    
-                "bio": update.bio,    
-                "image": update.image  
-            }
-        });
-    
-        Ok(user.into())
-    }
+async fn update_user(mut req: Request) -> tide::Result {
+    let (claims, token) = match auth::Auth::authorize(&req) {
+        Ok(claims) => claims,
+        Err(err) => return Ok(err.into()),
+    };
 
-    async fn follow(mut req: Request) -> tide::Result {
-        let profile = json! ({
-            "profile": {
-                "username": "jake",
-                "bio": "I work at statefarm",
-                "image": "https://api.realworld.io/images/smiley-cyrus.jpg",
-                "following": false
-            }
-        });
-        Ok(profile.into())
+    let update_user: UserUpdateWrapped = req.body_json().await?;
+    
+/*    let res = match db::update_user(req.state(), &claims.email, &update_user).await {
+        Ok(()) => {
+            let res = match db::get_user(req.state(), &update_user.email).await {
+                Ok(user) => {
+                    let mut user: User = user.into();
+                    user.token = Some(token);
+                    Ok(json!(UserWrapped::from_user(user)).into())
+                },
+                Err(err) => Ok(err.into()),
+            };
+            res
+        },
+        Err(err) => Ok(err.into()),
+    };
+*/
+    let res = match db::update_user(req.state(), &claims.email, &update_user.user).await {
+        Ok(user) => {
+            let mut user: User = user.into();
+            user.token = Some(token);
+            Ok(json!(UserWrapped::from_user(user)).into())
+        },
+        Err(err) => Ok(err.into()),
+    };
+    res
+}
+
+    async fn follow(req: Request) -> tide::Result {
+        let celeb_name = req.param("username")?;
+
+        let (claims, token) = match auth::Auth::authorize(&req) {
+            Ok(claims) => claims,
+            Err(err) => return Ok(err.into()),
+        };
+    
+        let res = match db::follow(req.state(), &claims.username, &celeb_name).await {
+            Ok(profile) => {
+                let mut profile: Profile = profile.into();
+                Ok(json!(ProfileWrapped::from_profile(profile)).into())
+            },
+            Err(err) => Ok(err.into()),
+        };
+        res
     }
 
     async fn unfollow(mut req: Request) -> tide::Result {

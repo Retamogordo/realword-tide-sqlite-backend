@@ -56,11 +56,28 @@ pub async fn connect(database_url_prefix: &str, database_url_path: &str,
             username TEXT NOT NULL,
             bio TEXT,
             image TEXT,
-            following BIT,
             FOREIGN KEY (username)
                REFERENCES users (username) 
                ON DELETE CASCADE
                ON UPDATE CASCADE
+        );
+    ")
+    .execute(&sqlite_pool)    
+    .await?;
+
+    sqlx::query("
+        DROP TABLE IF EXISTS followers;
+        CREATE TABLE IF NOT EXISTS followers (
+            follower_name TEXT NOT NULL,
+            celeb_name TEXT NOT NULL,
+            FOREIGN KEY (celeb_name)
+                REFERENCES users (username) 
+                ON DELETE CASCADE
+                ON UPDATE CASCADE,
+            FOREIGN KEY (follower_name)
+                REFERENCES users (username) 
+                ON DELETE CASCADE
+                ON UPDATE CASCADE
         );
     ")
     .execute(&sqlite_pool)    
@@ -92,11 +109,45 @@ pub(crate) async fn get_user(conn: &Pool<Sqlite>,
 ) -> Result<crate::User, crate::errors::RegistrationError>  {
 
     let user: crate::User = sqlx::query_as::<_, crate::User>(
-            "SELECT *, NULL as `token` FROM users LEFT JOIN profiles ON users.username = profiles.username WHERE email = ?;")
+        "SELECT *, NULL as `token` FROM users LEFT JOIN profiles ON users.username = profiles.username WHERE email = ?;")
+//            "SELECT *, NULL as `token` FROM users LEFT JOIN profiles ON users.username = profiles.username WHERE users.username = ?;")
         .bind(email)
-        .fetch_one(conn)   
-        .await?;
+        .fetch_optional(conn)   
+        .await?
+        .ok_or(crate::errors::RegistrationError::NoUserFound(email.to_string()))?;
     Ok(user)
+}
+
+pub(crate) async fn update_user(conn: &Pool<Sqlite>,
+    email: &str,
+    user: &crate::UserUpdate,
+) -> Result<crate::User, crate::errors::RegistrationError>  {
+    let statement = "UPDATE users SET ";
+    let mut s = format!("{}", statement);
+    let mut email_changed = false;
+
+    if let Some(username) = user.username.as_ref() {
+        s = format!("{} username = '{}',", s, username);
+    }
+    if let Some(email) = user.email.as_ref() {
+        s = format!("{} email = '{}',", s, email);
+        email_changed = true;
+    }
+    if let Some(bio) = user.bio.as_ref() {
+        s = format!("{} bio = '{}',", s, bio);
+    }
+    if let Some(image) = user.username.as_ref() {
+        s = format!("{} image = '{}',", s, image);
+    }
+    s = format!("{} WHERE email = '{}'", s.split_at(s.len()-1).0, email);
+    
+    sqlx::query(&s)
+        .execute(conn)    
+        .await?;
+
+    let new_email = if email_changed { user.email.as_ref().unwrap() } else { email };
+
+    get_user(conn, new_email).await
 }
 
 pub(crate) async fn get_profile(conn: &Pool<Sqlite>,
@@ -104,9 +155,32 @@ pub(crate) async fn get_profile(conn: &Pool<Sqlite>,
 ) -> Result<crate::Profile, crate::errors::RegistrationError>  {
 
     let profile: crate::Profile = sqlx::query_as::<_, crate::Profile>(
-            "SELECT * FROM profiles INNER JOIN users ON profiles.username = users.username WHERE profiles.username = ?;")
-        .bind(username)
+            &format!("SELECT *, 
+                (SELECT COUNT(*)>0 FROM followers 
+                    WHERE celeb_name = '{}'
+                    ) AS following
+            FROM profiles 
+            INNER JOIN users ON profiles.username = users.username 
+            WHERE profiles.username = '{}';
+    ", username, username))
+//        .bind(username)
+//        .bind(username)
         .fetch_one(conn)   
         .await?;
     Ok(profile)
+}
+
+pub(crate) async fn follow(conn: &Pool<Sqlite>,
+    follower_name: &str,
+    celeb_name: &str,
+) -> Result<crate::Profile, crate::errors::RegistrationError>  {
+    
+    sqlx::query("INSERT INTO followers (follower_name, celeb_name)
+        VALUES( ?,?);")
+        .bind(follower_name)
+        .bind(celeb_name)
+        .execute(conn)    
+        .await?;
+
+    get_profile(conn, celeb_name).await
 }

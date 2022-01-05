@@ -1496,6 +1496,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "realworld-tide-sqlite-backend"
+version = "0.1.0"
+dependencies = [
+ "async-std",
+ "async-trait",
+ "dotenv",
+ "http-types",
+ "jsonwebtoken",
+ "once_cell",
+ "serde",
+ "sqlx",
+ "tide",
+ "validator",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.2.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1998,22 +2014,6 @@ dependencies = [
  "route-recognizer",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "tide-example"
-version = "0.1.0"
-dependencies = [
- "async-std",
- "async-trait",
- "dotenv",
- "http-types",
- "jsonwebtoken",
- "once_cell",
- "serde",
- "sqlx",
- "tide",
- "validator",
 ]
 
 [[package]]

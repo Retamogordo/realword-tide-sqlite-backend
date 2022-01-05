@@ -6,6 +6,7 @@ const DB_UNIQUE_CONSTRAINT_VIOLATION: &str = "1555";
 pub(crate) enum RegistrationError {
     InvalidEmail,
     UsernameOrEmailExists,
+    NoUserFound(String),
     UnhandledDBError(String),
 }
 
@@ -18,6 +19,9 @@ impl Into<tide::Response> for RegistrationError {
             },
             Self::UsernameOrEmailExists => {
                 "username or email is already taken".to_string()
+            },
+            Self::NoUserFound(email) => {
+                format!("no user found with email {}", email)
             },
             Self::UnhandledDBError(msg) => {
                 format!("Unhandled db error: {}", msg)
@@ -57,7 +61,9 @@ impl Into<tide::Response> for AuthenticationError {
     fn into(self) -> tide::Response {
         let message = match self {
             Self::TokenCreationError => {
-                "authentication token not created".to_string()
+                let mut response = tide::Response::from(tide::StatusCode::UnprocessableEntity);
+                response.set_body(json!({ "errors":{"body": [ "authentication token not created".to_string() ] }}));
+                return response;
             },
             Self::NoAuthorizationHeaderInRequest => {
                 "no authorization header in request".to_string()
@@ -69,8 +75,7 @@ impl Into<tide::Response> for AuthenticationError {
                 "invalid token in request".to_string()
             },
         };
-        let err = tide::Error::from_str(tide::StatusCode::UnprocessableEntity, message.clone());
-        let mut response: tide::Response = err.into();
+        let mut response = tide::Response::from(tide::StatusCode::Unauthorized);
         response.set_body(json!({ "errors":{"body": [ message ] }}));
         response
     }
