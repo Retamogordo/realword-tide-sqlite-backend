@@ -40,7 +40,7 @@ pub async fn connect(database_url_prefix: &str, database_url_path: &str,
  //   sqlx::migrate!("../../../sqlite").run(&sqlite_pool).await?;
 
     sqlx::query("
-        DROP TABLE users;
+        DROP TABLE IF EXISTS users;
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY NOT NULL,
             email TEXT UNIQUE NOT NULL,
@@ -56,6 +56,7 @@ pub async fn connect(database_url_prefix: &str, database_url_path: &str,
             username TEXT NOT NULL,
             bio TEXT,
             image TEXT,
+            following BIT,
             FOREIGN KEY (username)
                REFERENCES users (username) 
                ON DELETE CASCADE
@@ -66,21 +67,6 @@ pub async fn connect(database_url_prefix: &str, database_url_path: &str,
     .await?;
 
     Ok(sqlite_pool)
-}
-
-pub async fn register_user1(conn: &Pool<Sqlite>,
-    user: &crate::UserReg,
-) -> Result<(), sqlx::Error>  {
-    
-    sqlx::query(
-            "INSERT INTO users (username, email, password)
-            VALUES( ?,	?, ?);")
-        .bind(&user.username)
-        .bind(&user.email)
-        .bind(&user.password)
-        .execute(conn)    
-        .await?;
-    Ok(())
 }
 
 pub(crate) async fn register_user(conn: &Pool<Sqlite>,
