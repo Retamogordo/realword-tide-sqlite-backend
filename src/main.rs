@@ -133,7 +133,7 @@ struct CreateArticleRequestWrapped {
 }
 
 #[derive(sqlx::FromRow)]
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 #[sqlx(rename_all = "camelCase")]
 pub(crate) struct Article { 
@@ -143,13 +143,37 @@ pub(crate) struct Article {
     body: String,
     tag_list: Option<String>,
     created_at: chrono::DateTime<chrono::Utc>,
-    updated_at: chrono::NaiveDateTime,
+    updated_at: chrono::DateTime<chrono::Utc>,
     favorited: bool,
     favorites_count: u32,
-//    author: String,   
-/*    bio: Option<String>,
-    image: Option<String>,
-    following: bool,*/
+}
+
+use serde::ser::SerializeStruct;
+impl Serialize for Article {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // 3 is the number of fields in the struct.
+        let mut state = serializer.serialize_struct("Article", 9)?;
+        state.serialize_field("slug", &self.slug)?;
+        state.serialize_field("title", &self.title)?;
+        state.serialize_field("description", &self.description)?;
+        state.serialize_field("body", &self.body)?;
+        state.serialize_field("tagList", 
+            &self.tag_list.as_ref().and_then(|tags| 
+                Some(tags.split(",")
+                    .filter(|tag| *tag != "")
+                    .map(|tag| tag.to_string())
+                    .collect::<Vec<String>>()))
+        )?;
+        // quick and dirty - needed to add some dummy millis to fit to conduit deser format
+        state.serialize_field("createdAt", &self.created_at.checked_add_signed(chrono::Duration::milliseconds(42)))?;
+        state.serialize_field("updatedAt", &self.updated_at.checked_add_signed(chrono::Duration::milliseconds(42)))?;
+        state.serialize_field("favorited", &self.favorited)?;
+        state.serialize_field("favoritesCount", &self.favorites_count)?;
+        state.end()
+    }
 }
 
 //#[derive(Debug, Serialize, Deserialize, Clone)]
