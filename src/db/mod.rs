@@ -192,9 +192,10 @@ pub(crate) async fn update_user(conn: &Pool<Sqlite>,
 
 pub(crate) async fn get_profile(conn: &Pool<Sqlite>,
     username: &str,
-) -> Result<crate::Profile, crate::errors::RegistrationError>  {
+) -> Option<crate::Profile> {
+//-> Result<crate::Profile, crate::errors::RegistrationError>  {
 
-    let profile: crate::Profile = sqlx::query_as::<_, crate::Profile>(
+    let profile = sqlx::query_as::<_, crate::Profile>(
             &format!("SELECT *, 
                 (SELECT COUNT(*)>0 FROM followers 
                     WHERE celeb_name = '{}'
@@ -205,9 +206,13 @@ pub(crate) async fn get_profile(conn: &Pool<Sqlite>,
     ", username, username))
 //        .bind(username)
 //        .bind(username)
-        .fetch_one(conn)   
-        .await?;
-    Ok(profile)
+        .fetch_optional(conn)   
+        .await
+        .unwrap_or(None);
+
+    profile
+//        .ok_or(crate::errors::RegistrationError::NoUserFound(username.to_string()))?;
+//    Ok(profile)
 }
 
 pub(crate) async fn follow(conn: &Pool<Sqlite>,
@@ -222,7 +227,9 @@ pub(crate) async fn follow(conn: &Pool<Sqlite>,
         .execute(conn)    
         .await?;
 
-    get_profile(conn, celeb_name).await
+    get_profile(conn, celeb_name)
+        .await
+        .ok_or(crate::errors::RegistrationError::NoUserFound(celeb_name.to_string()))
 }
 pub(crate) async fn unfollow(conn: &Pool<Sqlite>,
     follower_name: &str,
@@ -236,24 +243,13 @@ pub(crate) async fn unfollow(conn: &Pool<Sqlite>,
         .execute(conn)    
         .await?;
 
-    get_profile(conn, celeb_name).await
+    get_profile(conn, celeb_name)
+        .await
+        .ok_or(crate::errors::RegistrationError::NoUserFound(celeb_name.to_string()))
+
 }
 
 
-#[derive(sqlx::FromRow)]
-#[sqlx(rename_all = "camelCase")]
-pub(crate) struct Article { 
-    slug: String,
-    title: String,
-    description: String,
-    body: String,
-    tag_list: String,
-    created_at: String,
-    updated_at: String,
-    favorited: bool,
-    favorites_count: u32,
- //   author: crate::Profile,   
-}
 
 //use sqlx::value::ValueRef;
 /*
@@ -272,34 +268,46 @@ impl<'r> sqlx::Decode<'r, Sqlite> for TagList {
 pub(crate) async fn create_article(conn: &Pool<Sqlite>,
     author_name: &str,
     article: &crate::CreateArticleRequest,
-) -> Result<Article, crate::errors::RegistrationError>  {
+) -> Result<crate::ArticleResponse, crate::errors::RegistrationError>  {
     let mut s = "";
     sqlx::query(
         "INSERT INTO articles (author, slug, title, description, body, tagList, createdAt, updatedAt)
-        VALUES( ?,	?, ?, ?, ?, ?, datetime(now), datetime(now));
+        VALUES( ?,	?, ?, ?, ?, ?, datetime('now'), datetime('now'));
         ")
     .bind(&author_name)
-//    .bind(&article.slug)
+    .bind(&article.slug)
     .bind(&article.title)
     .bind(&article.description)
     .bind(&article.body)
-/*    .bind(
-        &article.tagList
-            .iter()
-            .fold("".to_string(), |s, tag| format!("{}{},", s, tag) )
-    )*/
+    .bind(
+        &article.tag_list.as_ref()
+            .and_then(|tags| 
+                Some( tags
+                    .iter()
+                    .fold("".to_string(), |s, tag| format!("{}{},", s, tag) ) )
+            )
+    )
     .execute(conn)    
     .await?;
 
-    let article = sqlx::query_as::<_, Article>(
+/*    let article = sqlx::query_as::<_, Article>(
+        "SELECT *, profiles.username as `author`, profiles.bio as `bio`, profiles.image as `image`, profiles.following as `following`  
+        FROM articles LEFT JOIN profiles ON articles.author = profiles.username 
+        WHERE author = ? AND title = ?"
+    )*/
+    let article = sqlx::query_as::<_, crate::Article>(
         "SELECT * FROM articles WHERE author = ? AND title = ?"
     )
     .bind(&author_name)
     .bind(&article.title)
     .fetch_one(conn)    
     .await?;
+
+//    let author = crate::AuthorWrapped{author: get_profile(conn, author_name).await};
+    let author = get_profile(conn, author_name).await;
+
   //  .ok_or(unimplemented!());
-    Ok(article)
+    Ok(crate::ArticleResponse { article, author })
 }
 
 //fn vec_to_string(v: Vec<String>

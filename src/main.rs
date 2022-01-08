@@ -88,7 +88,6 @@ impl From<UserReg> for User {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[derive(sqlx::FromRow)]
-#[derive(sqlx::Decode)]
 struct Profile {
     username: String,    
     bio: String,    
@@ -133,20 +132,68 @@ struct CreateArticleRequestWrapped {
     article: CreateArticleRequest,
 }
 
-/*
+#[derive(sqlx::FromRow)]
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")] 
-struct ArticleResponse { 
-    slug: String,
+#[serde(rename_all = "camelCase")]
+#[sqlx(rename_all = "camelCase")]
+pub(crate) struct Article { 
+    slug: Option<String>,
     title: String,
-    description: String,
+    description: Option<String>,
     body: String,
-    tag_list: TagList,
-    created_at: String,
-    updated_at: String,
+    tag_list: Option<String>,
+    created_at: chrono::DateTime<chrono::Utc>,
+    updated_at: chrono::NaiveDateTime,
     favorited: bool,
     favorites_count: u32,
- //   author: Profile,   
+//    author: String,   
+/*    bio: Option<String>,
+    image: Option<String>,
+    following: bool,*/
+}
+
+//#[derive(Debug, Serialize, Deserialize, Clone)]
+//pub(crate) struct AuthorWrapped(Option<Profile>)
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub(crate) struct ArticleResponse {
+    pub author: Option<Profile>,
+    #[serde(flatten)]
+    pub article: Article,
+}
+
+/*
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")] 
+struct ArticleResponse<'r> { 
+    slug: &'r Option<String>,
+    title: &'r String,
+    description: &'r Option<String>,
+    body: &'r String,
+    tag_list: Option<Vec<String>>,
+    created_at: &'r chrono::DateTime<chrono::Utc>,
+    updated_at: &'r chrono::NaiveDateTime,
+    favorited: bool,
+    favorites_count: u32,
+    author: Profile,   
+}
+*/
+/*
+impl<'r> ArticleResponse<'r> {
+    fn from_article_profile(article: &'r Article, profile: Profile) -> Self {
+        Self { 
+            slug: &article.slug, 
+            title: &article.title, 
+            description: &article.description, 
+            body: &article.body, 
+            tag_list: None, 
+            created_at: &article.created_at, 
+            updated_at: &article.updated_at, 
+            favorited: article.favorited,
+            favorites_count: article.favorites_count,
+            author: profile,
+        }
+    }
 }
 */
 /*
@@ -158,8 +205,8 @@ impl sqlx::Type<Sqlite> for TagList {
 
 //#[derive(Debug, Serialize, Deserialize, Clone)]
 
-/*
-#[derive(Debug, Serialize, Deserialize)]
+
+#[derive(Debug, Serialize)]
 struct ArticleResponseWrapped {
     article: ArticleResponse,
 }
@@ -169,7 +216,7 @@ impl ArticleResponseWrapped {
         Self { article }
     }
 }
-*/
+
 #[derive(Clone)]
 struct MyState {
     name: String,
@@ -339,10 +386,11 @@ async fn profile(req: Request) -> tide::Result {
     let username = req.param("username")?;
 
     let res = match db::get_profile(req.state(), &username).await {
-        Ok(profile) => {
+        Some(profile) => {
             Ok(json!(ProfileWrapped::from_profile(profile)).into())
         },
-        Err(err) => Ok(err.into()),
+        None => 
+        Ok(crate::errors::RegistrationError::NoUserFound(username.to_string()).into())
     };
     res          
 }
@@ -408,19 +456,13 @@ async fn create_article(mut req: Request) -> tide::Result {
         Ok(claims) => claims,
         Err(err) => return Ok(err.into()),
     };
-    let article_req: CreateArticleRequestWrapped = match req.body_json().await {
-        Ok(x) => x,
-        Err(err) => {
 
-            return Ok(err.into());
-        },
-    };
+    let article_req: CreateArticleRequestWrapped = req.body_json().await?;
 
     let res = match db::create_article(req.state(), &claims.username, &article_req.article).await {
         Ok(article) => {
-//            let article: ArticleResponse = article.into();
-//            Ok(json!(ArticleResponseWrapped::from_article(article)).into())
-            Ok(json!("").into())
+//            let article = ArticleResponse::from_article_profile(&article, profile);
+            Ok(json!(ArticleResponseWrapped::from_article(article)).into())
         },
         Err(err) => Ok(err.into()),
     };
