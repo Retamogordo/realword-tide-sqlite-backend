@@ -1,6 +1,9 @@
 use tide::{Response, Next, Result, StatusCode};
 use tide::prelude::*;
+
+use sqlx::prelude::*;
 use sqlx::sqlite::{SqlitePool};
+
 use std::future::Future;
 use std::pin::Pin;
 use validator::{Validate};
@@ -85,6 +88,7 @@ impl From<UserReg> for User {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[derive(sqlx::FromRow)]
+#[derive(sqlx::Decode)]
 struct Profile {
     username: String,    
     bio: String,    
@@ -114,6 +118,58 @@ struct LoginRequestWrapped {
     user: LoginRequest,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")] 
+struct CreateArticleRequest { 
+    slug: Option<String>,
+    title: String,
+    description: Option<String>,
+    body: String,
+    tag_list: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct CreateArticleRequestWrapped { 
+    article: CreateArticleRequest,
+}
+
+/*
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")] 
+struct ArticleResponse { 
+    slug: String,
+    title: String,
+    description: String,
+    body: String,
+    tag_list: TagList,
+    created_at: String,
+    updated_at: String,
+    favorited: bool,
+    favorites_count: u32,
+ //   author: Profile,   
+}
+*/
+/*
+impl sqlx::Type<Sqlite> for TagList {
+    fn type_info() -> SqliteTypeInfo {
+        SqliteTypeInfo::from_str("text")
+    }
+}*/
+
+//#[derive(Debug, Serialize, Deserialize, Clone)]
+
+/*
+#[derive(Debug, Serialize, Deserialize)]
+struct ArticleResponseWrapped {
+    article: ArticleResponse,
+}
+
+impl ArticleResponseWrapped {
+    fn from_article(article: ArticleResponse) -> Self {
+        Self { article }
+    }
+}
+*/
 #[derive(Clone)]
 struct MyState {
     name: String,
@@ -122,8 +178,6 @@ struct MyState {
 struct MyMiddle {
 //    conn: &'static sqlx::Pool<sqlx::Sqlite>,
 }
-
-
 
 #[async_std::main]
 async fn main() -> tide::Result<()> {
@@ -151,8 +205,8 @@ async fn main() -> tide::Result<()> {
     app.at("/api/user").put(update_user);
     app.at("/api/profiles/:username").get(profile);
     app.at("/api/profiles/:username/follow").post(follow);
-//    app.at("/api/profiles/*/follow").delete(unfollow);
-//    app.at("/api/articles").get(articles);
+    app.at("/api/profiles/:username/follow").delete(unfollow);
+    app.at("/api/articles").post(create_article);
  
     app.listen("127.0.0.1:3000").await?;
 }
@@ -252,7 +306,7 @@ async fn register(mut req: Request) -> tide::Result {
 async fn login(mut req: Request) -> tide::Result {
     println!("in login");
     let login_req: LoginRequestWrapped = req.body_json().await?;
-    let res = match db::get_user(req.state(), &login_req.user.email).await {
+    let res = match db::get_user_by_email(req.state(), &login_req.user.email).await {
         Ok(user) => {
             let mut user: User = user.into();
             auth::Auth::create_token(&mut user)?;
@@ -270,7 +324,7 @@ async fn current_user(req: Request) -> tide::Result {
         Err(err) => return Ok(err.into()),
     };
 
-    let res = match db::get_user(req.state(), &claims.email).await {
+    let res = match db::get_user_by_username(req.state(), &claims.username).await {
         Ok(user) => {
             let mut user: User = user.into();
             user.token = Some(token);
@@ -301,23 +355,8 @@ async fn update_user(mut req: Request) -> tide::Result {
     };
 
     let update_user: UserUpdateWrapped = req.body_json().await?;
-    
-/*    let res = match db::update_user(req.state(), &claims.email, &update_user).await {
-        Ok(()) => {
-            let res = match db::get_user(req.state(), &update_user.email).await {
-                Ok(user) => {
-                    let mut user: User = user.into();
-                    user.token = Some(token);
-                    Ok(json!(UserWrapped::from_user(user)).into())
-                },
-                Err(err) => Ok(err.into()),
-            };
-            res
-        },
-        Err(err) => Ok(err.into()),
-    };
-*/
-    let res = match db::update_user(req.state(), &claims.email, &update_user.user).await {
+
+    let res = match db::update_user(req.state(), &claims.username, &update_user.user).await {
         Ok(user) => {
             let mut user: User = user.into();
             user.token = Some(token);
@@ -328,36 +367,69 @@ async fn update_user(mut req: Request) -> tide::Result {
     res
 }
 
-    async fn follow(req: Request) -> tide::Result {
-        let celeb_name = req.param("username")?;
+async fn follow(req: Request) -> tide::Result {
+    let celeb_name = req.param("username")?;
 
-        let (claims, token) = match auth::Auth::authorize(&req) {
-            Ok(claims) => claims,
-            Err(err) => return Ok(err.into()),
-        };
-    
-        let res = match db::follow(req.state(), &claims.username, &celeb_name).await {
-            Ok(profile) => {
-                let mut profile: Profile = profile.into();
-                Ok(json!(ProfileWrapped::from_profile(profile)).into())
-            },
-            Err(err) => Ok(err.into()),
-        };
-        res
-    }
+    let (claims, token) = match auth::Auth::authorize(&req) {
+        Ok(claims) => claims,
+        Err(err) => return Ok(err.into()),
+    };
 
-    async fn unfollow(mut req: Request) -> tide::Result {
-        let profile = json! ({
-            "profile": {
-                "username": "jake",
-                "bio": "I work at statefarm",
-                "image": "https://api.realworld.io/images/smiley-cyrus.jpg",
-                "following": false
-            }
-        });
-        Ok(profile.into())
-    }
-    async fn articles(mut req: Request) -> tide::Result {
+    let res = match db::follow(req.state(), &claims.username, &celeb_name).await {
+        Ok(profile) => {
+            let mut profile: Profile = profile.into();
+            Ok(json!(ProfileWrapped::from_profile(profile)).into())
+        },
+        Err(err) => Ok(err.into()),
+    };
+    res
+}
+
+async fn unfollow(req: Request) -> tide::Result {
+    let celeb_name = req.param("username")?;
+
+    let (claims, _) = match auth::Auth::authorize(&req) {
+        Ok(claims) => claims,
+        Err(err) => return Ok(err.into()),
+    };
+
+    let res = match db::unfollow(req.state(), &claims.username, &celeb_name).await {
+        Ok(profile) => {
+            let profile: Profile = profile.into();
+            Ok(json!(ProfileWrapped::from_profile(profile)).into())
+        },
+        Err(err) => Ok(err.into()),
+    };
+    res
+}
+
+async fn create_article(mut req: Request) -> tide::Result {
+    let (claims, _) = match auth::Auth::authorize(&req) {
+        Ok(claims) => claims,
+        Err(err) => return Ok(err.into()),
+    };
+    let article_req: CreateArticleRequestWrapped = match req.body_json().await {
+        Ok(x) => x,
+        Err(err) => {
+
+            return Ok(err.into());
+        },
+    };
+
+    let res = match db::create_article(req.state(), &claims.username, &article_req.article).await {
+        Ok(article) => {
+//            let article: ArticleResponse = article.into();
+//            Ok(json!(ArticleResponseWrapped::from_article(article)).into())
+            Ok(json!("").into())
+        },
+        Err(err) => Ok(err.into()),
+    };
+    res
+  //  Ok(json!("").into())
+
+}
+
+async fn articles(mut req: Request) -> tide::Result {
         let author: Author = req.body_json().await?;
 
         let articles = json! ({
