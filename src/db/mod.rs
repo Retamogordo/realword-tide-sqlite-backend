@@ -269,7 +269,6 @@ pub(crate) async fn create_article(conn: &Pool<Sqlite>,
     author_name: &str,
     article: &crate::CreateArticleRequest,
 ) -> Result<crate::ArticleResponse, crate::errors::RegistrationError>  {
-    let mut s = "";
     sqlx::query(
         "INSERT INTO articles (author, slug, title, description, body, tagList, createdAt, updatedAt)
         VALUES( ?,	?, ?, ?, ?, ?, datetime('now'), datetime('now'));
@@ -310,4 +309,35 @@ pub(crate) async fn create_article(conn: &Pool<Sqlite>,
     Ok(crate::ArticleResponse { article, author })
 }
 
-//fn vec_to_string(v: Vec<String>
+pub(crate) async fn get_articles(conn: &Pool<Sqlite>,
+    filter: crate::ArticleFilter
+) -> Result<crate::MultipleArticleResponse, crate::errors::RegistrationError>  {
+
+    let statement = format!("SELECT * FROM articles WHERE {} ORDER BY updatedAt", filter.to_string());
+    let articles = sqlx::query_as::<_, crate::Article>(
+        &statement
+    )
+//    .fetch_optional(conn)    
+    .fetch_all(conn)    
+    .await?;
+
+    let mut multiple_articles = Vec::<crate::ArticleResponse>::with_capacity(articles.len());
+
+    for article in articles {
+        let author = get_profile(conn, &article.author).await;
+        multiple_articles.push( crate::ArticleResponse { article, author } );
+    }
+
+    if 0 != multiple_articles.len() {
+        Ok(crate::MultipleArticleResponse::from_articles( multiple_articles ))    
+    } else { 
+        Err(crate::errors::RegistrationError::NoArticleFound)
+    }
+
+/*    if let Some(article) = article {
+        let author = get_profile(conn, &article.author).await;
+        Ok(crate::ArticleResponse { article, author })    
+    } else {
+        Err(crate::errors::RegistrationError::NoArticleFound)
+    }*/
+}

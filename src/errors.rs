@@ -1,36 +1,58 @@
 use tide::prelude::*;
+use std::error::Error;
 
 const DB_UNIQUE_CONSTRAINT_VIOLATION: &str = "1555";
 
+pub(crate) struct FromValidatorError(pub validator::ValidationErrors);
+
+impl Into<tide::Response> for FromValidatorError {
+    fn into(self) -> tide::Response {
+       //let message = self.0.clone().to_string();
+        let err = tide::Error::from_str(tide::StatusCode::UnprocessableEntity, "");
+        let mut response: tide::Response = err.into();
+        response.set_body(json!({ "errors":{"body": [ self.0.to_string() ] }}));
+        response
+    }
+}
+
+impl From<validator::ValidationErrors> for FromValidatorError {
+    fn from(err: validator::ValidationErrors) -> Self {
+        Self(err)
+    }
+}
+
 #[derive(Serialize)]
 pub(crate) enum RegistrationError {
-    InvalidEmail,
+//    InvalidEmail,
     UsernameOrEmailExists,
     NoUserFound(String),
+    NoArticleFound,
     UnhandledDBError(String),
 }
 
 //impl Into<tide::Error> for RegistrationError {
-impl Into<tide::Response> for RegistrationError {
-    fn into(self) -> tide::Response {
-        let message = match self {
-            Self::InvalidEmail => {
-                "email is invalid".to_string()
-            },
+impl Into<tide::Result> for RegistrationError {
+    fn into(self) -> tide::Result {
+        match self {
+//            Self::InvalidEmail => {
+//                "email is invalid".to_string()
+//            },
             Self::UsernameOrEmailExists => {
-                "username or email is already taken".to_string()
+                let message = "username or email is already taken".to_string();
+                let err = tide::Error::from_str(tide::StatusCode::UnprocessableEntity, message.clone());
+                let mut response: tide::Response = err.into();
+                response.set_body(json!({ "errors":{"body": [ message ] }}));
+                Ok(response)
             },
             Self::NoUserFound(email) => {
-                format!("no user found with email {}", email)
-            },
+                Err(tide::Error::from_str(tide::StatusCode::NotFound, "user not found"))            },
+            Self::NoArticleFound => {
+                Err(tide::Error::from_str(tide::StatusCode::NotFound, "article not found"))            },
             Self::UnhandledDBError(msg) => {
-                format!("Unhandled db error: {}", msg)
-            }
-        };
-        let err = tide::Error::from_str(tide::StatusCode::UnprocessableEntity, message.clone());
-        let mut response: tide::Response = err.into();
-        response.set_body(json!({ "errors":{"body": [ message ] }}));
-        response
+                Err(tide::Error::from_str(tide::StatusCode::InternalServerError, 
+                    format!("Unhandled db error: {}", msg)))            
+            },              
+        }
     }
 }
 
