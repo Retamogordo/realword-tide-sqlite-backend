@@ -2,6 +2,7 @@ use tide::prelude::*;
 use std::error::Error;
 
 const DB_UNIQUE_CONSTRAINT_VIOLATION: &str = "1555";
+const SQLITE_CONSTRAINT_UNIQUE: &str = "2067";
 
 pub(crate) struct FromValidatorError(pub validator::ValidationErrors);
 
@@ -60,7 +61,9 @@ impl From<sqlx::Error> for RegistrationError {
     fn from(err: sqlx::Error) -> Self {
         match err {
             sqlx::Error::Database(ref db_err) => {
-                if DB_UNIQUE_CONSTRAINT_VIOLATION == db_err.code().unwrap().into_owned() {
+                let code = db_err.code().unwrap().into_owned();
+                if DB_UNIQUE_CONSTRAINT_VIOLATION == code 
+                    || SQLITE_CONSTRAINT_UNIQUE == code {
                     RegistrationError::UsernameOrEmailExists
                 } else {
                     RegistrationError::UnhandledDBError(db_err.message().to_string())

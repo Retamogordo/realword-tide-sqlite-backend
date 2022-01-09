@@ -120,7 +120,8 @@ struct LoginRequestWrapped {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")] 
 struct CreateArticleRequest { 
-    slug: Option<String>,
+    #[serde(skip_deserializing)]
+    slug: String,
     title: String,
     description: Option<String>,
     body: String,
@@ -129,7 +130,17 @@ struct CreateArticleRequest {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct CreateArticleRequestWrapped { 
+    #[serde(deserialize_with = "slugify_article")]    
     article: CreateArticleRequest,
+}
+
+fn slugify_article<'de, D>(deserializer: D) -> std::result::Result<CreateArticleRequest, D::Error>
+where
+    D: serde::Deserializer<'de>, {
+    use slugify::slugify;
+    let mut req: CreateArticleRequest = serde::Deserialize::deserialize(deserializer)?;
+    req.slug = slugify!(&req.title);
+    Ok(req)
 }
 
 #[derive(sqlx::FromRow)]
@@ -137,6 +148,7 @@ struct CreateArticleRequestWrapped {
 #[serde(rename_all = "camelCase")]
 #[sqlx(rename_all = "camelCase")]
 pub(crate) struct Article { 
+    #[serde(skip_serializing)]
     slug: Option<String>,
     title: String,
     description: Option<String>,
@@ -254,7 +266,10 @@ async fn main() -> tide::Result<()> {
     app.at("/api/profiles/:username/follow").post(follow);
     app.at("/api/profiles/:username/follow").delete(unfollow);
     app.at("/api/articles").post(create_article);
+    app.at("/api/articles/feed").get(feed_articles);
     app.at("/api/articles").get(get_articles);
+    app.at("/api/articles/:slug").get(get_article);
+    app.at("/api/articles/:slug/favorite").post(favorite_article);
  
     app.listen("127.0.0.1:3000").await?;
 }
@@ -473,12 +488,33 @@ async fn create_article(mut req: Request) -> tide::Result {
     res
 }
 
+pub(crate) enum ArticleFilterEnum<'sl> {
+    BySlug(&'sl str),
+    ByRest(ArticleFilter),
+}
+
+impl<'sl> ArticleFilterEnum<'sl> {
+    fn from_slug(slug: &'sl str) -> Self {
+        Self::BySlug(slug)
+    }
+}
+
+impl std::fmt::Display for ArticleFilterEnum<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::BySlug(slug) => write!( f, " {}='{}'", "slug", slug),
+            Self::ByRest(filter) => filter.fmt(f),        
+        }
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(default)]
 pub(crate) struct ArticleFilter {
 //    #[serde(skip_serializing_if = "Option::is_none")]
     pub author: Option<String>,
     pub tag: Option<String>,
+//    pub slug: Option<&'sl str>,
 //    pub favorited: bool,
 }
 
@@ -496,14 +532,33 @@ impl std::fmt::Display for ArticleFilter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.author.as_ref().map(|val| write!( f, " {}='{}' AND", "author", val) ).unwrap_or(Ok(()))?;
         self.tag.as_ref().map(|val| write!( f, " {} LIKE '%{}%' AND", "tagList", val) ).unwrap_or(Ok(()))?;
-//        write!( f, " {}={} AND", "favorited", if self.favorited {1} else {0})?;
+//        self.slug.as_ref().map(|val| write!( f, " {}='{}' AND", "slug", val) ).unwrap_or(Ok(()))?;
+
+        //        write!( f, " {}={} AND", "favorited", if self.favorited {1} else {0})?;
         write!( f, " 1=1")
     }
 }
 
+async fn get_article(req: Request) -> tide::Result {
+    let slug = req.param("slug")?;
+    let filter = ArticleFilterEnum::BySlug(slug);
+
+    let res = match db::get_article(req.state(), filter).await {
+        Ok(article) => {
+            Ok(json!(ArticleResponseWrapped::from_article(article)).into())
+        },
+        Err(err) => err.into(),
+    };
+    res
+}
 
 async fn get_articles(req: Request) -> tide::Result {
-    let filter: ArticleFilter = req.query()?;
+//    let filter: ArticleFilterEnum = if let Ok(slug) = req.param("slug") {
+//        ArticleFilterEnum::BySlug(slug)
+//    } else {
+//        ArticleFilterEnum::ByRest(req.query()?)
+//    };
+    let filter = ArticleFilterEnum::ByRest(req.query()?);
 
     let res = match db::get_articles(req.state(), filter).await {
         Ok(articles) => {
@@ -513,6 +568,29 @@ async fn get_articles(req: Request) -> tide::Result {
         Err(err) => err.into(),
     };
     res
+}
+
+
+async fn favorite_article(req: Request) -> tide::Result {
+    let (claims, _) = match auth::Auth::authorize(&req) {
+        Ok(claims) => claims,
+        Err(err) => return Ok(err.into()),
+    };
+
+    let slug = req.param("slug")?;
+    let filter = ArticleFilterEnum::BySlug(slug);
+
+    let res = match db::favorite_article(req.state(), filter, &claims.username).await {
+        Ok(article) => {
+            Ok(json!(ArticleResponseWrapped::from_article(article)).into())
+        },
+        Err(err) => err.into(),
+    };
+    res
+}
+
+async fn feed_articles(req: Request) -> tide::Result {
+    Ok(json!("").into())
 }
 
 async fn articles(mut req: Request) -> tide::Result {

@@ -87,6 +87,7 @@ pub async fn connect(database_url_prefix: &str, database_url_path: &str,
     sqlx::query("
         DROP TABLE IF EXISTS articles;
         CREATE TABLE IF NOT EXISTS articles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             slug TEXT,
             title TEXT NOT NULL,
             description TEXT,
@@ -94,9 +95,25 @@ pub async fn connect(database_url_prefix: &str, database_url_path: &str,
             tagList TEXT,
             createdAt TEXT NOT NULL,
             updatedAt TEXT NOT NULL,
-            favorited BIT,
-            favoritesCount INTEGER,
             author TEXT NOT NULL   
+        );
+    ")
+    .execute(&sqlite_pool)    
+    .await?;
+    
+    sqlx::query("
+        DROP TABLE IF EXISTS favorite_articles;
+        CREATE TABLE IF NOT EXISTS favorite_articles (
+            id INTEGER NOT NULL,
+            username TEXT NOT NULL,
+            FOREIGN KEY (id)
+                REFERENCES articles (id) 
+                ON DELETE CASCADE
+            FOREIGN KEY (username)
+                REFERENCES users (username) 
+                ON DELETE CASCADE
+                ON UPDATE CASCADE
+            CONSTRAINT Pair UNIQUE (id, username)
         );
     ")
     .execute(&sqlite_pool)    
@@ -289,31 +306,61 @@ pub(crate) async fn create_article(conn: &Pool<Sqlite>,
     .execute(conn)    
     .await?;
 
-/*    let article = sqlx::query_as::<_, Article>(
-        "SELECT *, profiles.username as `author`, profiles.bio as `bio`, profiles.image as `image`, profiles.following as `following`  
-        FROM articles LEFT JOIN profiles ON articles.author = profiles.username 
-        WHERE author = ? AND title = ?"
-    )*/
-    let article = sqlx::query_as::<_, crate::Article>(
+
+ /*   let article = sqlx::query_as::<_, crate::Article>(
         "SELECT * FROM articles WHERE author = ? AND title = ?"
     )
     .bind(&author_name)
     .bind(&article.title)
     .fetch_one(conn)    
-    .await?;
+    .await?;*/
+    let article = get_article(conn, 
+        crate::ArticleFilterEnum::BySlug(&article.slug)
+    ).await?;
+    Ok(article)
 
 //    let author = crate::AuthorWrapped{author: get_profile(conn, author_name).await};
-    let author = get_profile(conn, author_name).await;
+//    let author = get_profile(conn, author_name).await;
 
   //  .ok_or(unimplemented!());
-    Ok(crate::ArticleResponse { article, author })
+//    Ok(crate::ArticleResponse { article, author })
+}
+
+fn get_article_clause(filter: &crate::ArticleFilterEnum<'_>) -> String  {
+    format!(" \
+        SELECT *, (favoritesCount>0) as favorited FROM \
+            (SELECT articles.id as id, slug, title, body, description, tagList, createdAt, updatedAt, author,	COUNT(favorite_articles.id) as favoritesCount FROM articles \
+            LEFT JOIN favorite_articles ON articles.id = favorite_articles.id WHERE {} ORDER BY updatedAt) \
+        WHERE id IS NOT NULL", 
+    filter.to_string())
+}
+
+pub(crate) async fn get_article(conn: &Pool<Sqlite>,
+    filter: crate::ArticleFilterEnum<'_>
+) -> Result<crate::ArticleResponse, crate::errors::RegistrationError>  {
+
+    let statement = get_article_clause(&filter);
+
+    let article = sqlx::query_as::<_, crate::Article>(
+        &statement
+    )
+    .fetch_optional(conn)    
+    .await?;
+
+    if let Some(article) = article {
+        let author = get_profile(conn, &article.author).await;
+        Ok(crate::ArticleResponse { article, author })    
+    } else {
+        Err(crate::errors::RegistrationError::NoArticleFound)
+    }
 }
 
 pub(crate) async fn get_articles(conn: &Pool<Sqlite>,
-    filter: crate::ArticleFilter
+    filter: crate::ArticleFilterEnum<'_>
 ) -> Result<crate::MultipleArticleResponse, crate::errors::RegistrationError>  {
+  
+    let statement = get_article_clause(&filter);
 
-    let statement = format!("SELECT * FROM articles WHERE {} ORDER BY updatedAt", filter.to_string());
     let articles = sqlx::query_as::<_, crate::Article>(
         &statement
     )
@@ -340,4 +387,26 @@ pub(crate) async fn get_articles(conn: &Pool<Sqlite>,
     } else {
         Err(crate::errors::RegistrationError::NoArticleFound)
     }*/
+}
+
+pub(crate) async fn favorite_article(conn: &Pool<Sqlite>,
+    filter: crate::ArticleFilterEnum<'_>,
+    username: &str,
+) -> Result<crate::ArticleResponse, crate::errors::RegistrationError>  {
+
+    let statement = "
+        INSERT INTO favorite_articles (id, username) VALUES (
+            (SELECT id FROM articles WHERE slug=?), ?)
+            ON CONFLICT DO NOTHING
+        ";
+    
+    sqlx::query(
+        &statement
+    )
+    .bind(&filter.to_string())
+    .bind(&username)
+    .execute(conn)
+    .await?;    
+
+    get_article(conn, filter).await
 }
