@@ -117,7 +117,7 @@ struct LoginRequestWrapped {
     user: LoginRequest,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")] 
 struct CreateArticleRequest { 
     #[serde(skip_deserializing)]
@@ -128,13 +128,13 @@ struct CreateArticleRequest {
     tag_list: Option<Vec<String>>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone)]
 struct CreateArticleRequestWrapped { 
-    #[serde(deserialize_with = "slugify_article")]    
+    #[serde(deserialize_with = "slugify_article_on_create")]    
     article: CreateArticleRequest,
 }
 
-fn slugify_article<'de, D>(deserializer: D) -> std::result::Result<CreateArticleRequest, D::Error>
+fn slugify_article_on_create<'de, D>(deserializer: D) -> std::result::Result<CreateArticleRequest, D::Error>
 where
     D: serde::Deserializer<'de>, {
     use slugify::slugify;
@@ -268,6 +268,7 @@ async fn main() -> tide::Result<()> {
     app.at("/api/articles").post(create_article);
     app.at("/api/articles/feed").get(feed_articles);
     app.at("/api/articles").get(get_articles);
+    app.at("/api/articles/:slug").put(update_article);
     app.at("/api/articles/:slug").get(get_article);
     app.at("/api/articles/:slug/favorite").post(favorite_article);
     app.at("/api/articles/:slug/favorite").delete(unfavorite_article);
@@ -359,14 +360,20 @@ async fn register(mut req: Request) -> tide::Result {
         Ok(_) => (),
         Err(err) => return Ok(errors::FromValidatorError(err).into())
     };
-
+/*
+    Ok(json!(UserWrapped::from_user(
+        db::register_user(req.state(), &user.user)
+        .await?
+//        .or_else(|err| err.into())?
+    )).into())
+*/
     let res = match db::register_user(req.state(), &user.user).await {
         Ok(()) => {
             let mut user = user.user.into();
             auth::Auth::create_token(&mut user)?;
             Ok(json!(UserWrapped::from_user(user)).into())
         },
-        Err(err) => err.into(),
+        Err(err) => Err(err.into()),
     };
     res          
 }
@@ -380,17 +387,17 @@ async fn login(mut req: Request) -> tide::Result {
             auth::Auth::create_token(&mut user)?;
             Ok(json!(UserWrapped::from_user(user)).into())
         },
-        Err(err) => err.into(),
+        Err(err) => Err(err.into()),
     };
     res          
 }
 
 async fn current_user(req: Request) -> tide::Result {
 
-    let (claims, token) = match auth::Auth::authorize(&req) {
+    let (claims, token) = auth::Auth::authorize(&req)?;/* {
         Ok(claims) => claims,
         Err(err) => return Ok(err.into()),
-    };
+    };*/
 
     let res = match db::get_user_by_username(req.state(), &claims.username).await {
         Ok(user) => {
@@ -398,7 +405,7 @@ async fn current_user(req: Request) -> tide::Result {
             user.token = Some(token);
             Ok(json!(UserWrapped::from_user(user)).into())
         },
-        Err(err) => err.into(),
+        Err(err) => Err(err.into()),
     };
     res
 }
@@ -411,17 +418,18 @@ async fn profile(req: Request) -> tide::Result {
             Ok(json!(ProfileWrapped::from_profile(profile)).into())
         },
         None => 
-        crate::errors::RegistrationError::NoUserFound(username.to_string()).into()
+        Err(crate::errors::RegistrationError::NoUserFound(username.to_string()).into())
     };
     res          
 }
 
 
 async fn update_user(mut req: Request) -> tide::Result {
-    let (claims, token) = match auth::Auth::authorize(&req) {
+    let (claims, token) = auth::Auth::authorize(&req)?;
+    /* {
         Ok(claims) => claims,
         Err(err) => return Ok(err.into()),
-    };
+    };*/
 
     let update_user: UserUpdateWrapped = req.body_json().await?;
 
@@ -431,7 +439,7 @@ async fn update_user(mut req: Request) -> tide::Result {
             user.token = Some(token);
             Ok(json!(UserWrapped::from_user(user)).into())
         },
-        Err(err) => err.into(),
+        Err(err) => Err(err.into()),
     };
     res
 }
@@ -439,17 +447,14 @@ async fn update_user(mut req: Request) -> tide::Result {
 async fn follow(req: Request) -> tide::Result {
     let celeb_name = req.param("username")?;
 
-    let (claims, token) = match auth::Auth::authorize(&req) {
-        Ok(claims) => claims,
-        Err(err) => return Ok(err.into()),
-    };
+    let (claims, token) = auth::Auth::authorize(&req)?;
 
     let res = match db::follow(req.state(), &claims.username, &celeb_name).await {
         Ok(profile) => {
-            let mut profile: Profile = profile.into();
+            let profile: Profile = profile.into();
             Ok(json!(ProfileWrapped::from_profile(profile)).into())
         },
-        Err(err) => err.into(),
+        Err(err) => Err(err.into()),
     };
     res
 }
@@ -457,26 +462,20 @@ async fn follow(req: Request) -> tide::Result {
 async fn unfollow(req: Request) -> tide::Result {
     let celeb_name = req.param("username")?;
 
-    let (claims, _) = match auth::Auth::authorize(&req) {
-        Ok(claims) => claims,
-        Err(err) => return Ok(err.into()),
-    };
+    let (claims, token) = auth::Auth::authorize(&req)?;
 
     let res = match db::unfollow(req.state(), &claims.username, &celeb_name).await {
         Ok(profile) => {
             let profile: Profile = profile.into();
             Ok(json!(ProfileWrapped::from_profile(profile)).into())
         },
-        Err(err) => err.into(),
+        Err(err) => Err(err.into()),
     };
     res
 }
 
 async fn create_article(mut req: Request) -> tide::Result {
-    let (claims, _) = match auth::Auth::authorize(&req) {
-        Ok(claims) => claims,
-        Err(err) => return Ok(err.into()),
-    };
+    let (claims, token) = auth::Auth::authorize(&req)?;
 
     let article_req: CreateArticleRequestWrapped = req.body_json().await?;
 
@@ -484,32 +483,12 @@ async fn create_article(mut req: Request) -> tide::Result {
         Ok(article) => {
             Ok(json!(ArticleResponseWrapped::from_article(article)).into())
         },
-        Err(err) => err.into(),
+        Err(err) => Err(err.into()),
     };
     res
 }
 
 trait ArticleFilter: std::fmt::Display {}
-/*
-pub(crate) enum ArticleFilterEnum<'sl> {
-    BySlug(&'sl str),
-    ByRest(ArticleFilterByValues),
-}
-
-impl<'sl> ArticleFilterEnum<'sl> {
-    fn from_slug(slug: &'sl str) -> Self {
-        Self::BySlug(slug)
-    }
-}
-
-impl std::fmt::Display for ArticleFilterEnum<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::BySlug(slug) => write!( f, " {}='{}'", "slug", slug),
-            Self::ByRest(filter) => filter.fmt(f),        
-        }
-    }
-}*/
 
 #[derive(Deserialize)]
 pub(crate) struct ArticleFilterBySlug<'a> {
@@ -596,6 +575,70 @@ impl std::fmt::Display for LimitOffsetFilter {
     }
 }
 
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")] 
+pub(crate) struct UpdateArticleRequest { 
+    title: Option<String>,
+    description: Option<String>,
+    body: Option<String>,
+    #[serde(skip_deserializing)]
+    pub slug_from_title: Option<String>,
+}
+
+fn slugify_article_on_update<'de, D>(deserializer: D) -> std::result::Result<UpdateArticleRequest, D::Error>
+where
+    D: serde::Deserializer<'de>, {
+    use slugify::slugify;
+    let mut req: UpdateArticleRequest = serde::Deserialize::deserialize(deserializer)?;
+    req.slug_from_title = req.title.as_ref().and_then(|title| Some(slugify!(title)));
+    Ok(req)
+}
+
+#[derive(Debug, Deserialize, Clone)]
+//#[serde(default)]
+pub(crate) struct UpdateArticleFilter<'a> {
+    #[serde(skip_deserializing)]
+    pub slug: &'a str,
+    #[serde(skip_deserializing)]
+    pub author: &'a str,
+    #[serde(deserialize_with = "slugify_article_on_update")]    
+    article: UpdateArticleRequest,
+}
+
+impl UpdateArticleFilter<'_> {
+    pub fn updated_slug(&self) -> &str {
+        if let Some(ref slug) = self.article.slug_from_title {
+            slug
+        } else { 
+            self.slug
+        }
+    }
+}
+/*
+impl Default for UpdateArticleFilter<'_> {
+    fn default() -> Self {
+        Self { 
+            slug: "",
+            title: None,
+            description: None,
+            body: None, 
+        }
+    }
+}
+*/
+impl std::fmt::Display for UpdateArticleFilter<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use slugify::slugify;
+
+        self.article.title.as_ref().map(|val| 
+            write!( f, " {}='{}' , {}='{}'", "title", val, "slug", slugify!(val)) ).unwrap_or(Ok(()))?;
+        self.article.description.as_ref().map(|val| write!( f, " {}='{}' ,", "description", val) ).unwrap_or(Ok(()))?;
+        self.article.body.as_ref().map(|val| write!( f, " {}='{}' ,", "body", val) ).unwrap_or(Ok(()))?;
+        write!( f, " id=id ")?;
+        write!( f, " WHERE slug='{}' AND author='{}'", self.slug, self.author)
+    }
+}
+
 async fn get_article(req: Request) -> tide::Result {
     let slug = req.param("slug")?;
 //    let filter = ArticleFilterEnum::BySlug(slug);
@@ -605,7 +648,7 @@ async fn get_article(req: Request) -> tide::Result {
         Ok(article) => {
             Ok(json!(ArticleResponseWrapped::from_article(article)).into())
         },
-        Err(err) => err.into(),
+        Err(err) => Err(err.into()),
     };
     res
 }
@@ -620,16 +663,33 @@ async fn get_articles(req: Request) -> tide::Result {
 //            Ok(json!(ArticleResponseWrapped::from_article(article)).into())
             Ok(json!(articles).into())
         },
-        Err(err) => err.into(),
+        Err(err) => Err(err.into()),
+    };
+    res
+}
+
+async fn update_article(mut req: Request) -> tide::Result {
+    let (claims, _) = auth::Auth::authorize(&req)?;
+
+    let mut filter: UpdateArticleFilter = req.body_json().await?;
+    filter.slug = req.param("slug")?;
+    filter.author = &claims.username;
+
+    let res = match db::update_article(req.state(), filter).await {
+        Ok(article) => {
+            Ok(json!(ArticleResponseWrapped::from_article(article)).into())
+        },
+        Err(err) => Err(err.into()),
     };
     res
 }
 
 async fn favorite_article(req: Request) -> tide::Result {
-    let (claims, _) = match auth::Auth::authorize(&req) {
+    let (claims, _) = auth::Auth::authorize(&req)?;
+    /* {
         Ok(claims) => claims,
         Err(err) => return Ok(err.into()),
-    };
+    };*/
 
     let slug = req.param("slug")?;
 //    let filter = ArticleFilterEnum::BySlug(slug);
@@ -639,16 +699,16 @@ async fn favorite_article(req: Request) -> tide::Result {
         Ok(article) => {
             Ok(json!(ArticleResponseWrapped::from_article(article)).into())
         },
-        Err(err) => err.into(),
+        Err(err) => Err(err.into()),
     };
     res
 }
 
 async fn unfavorite_article(req: Request) -> tide::Result {
-    let (claims, _) = match auth::Auth::authorize(&req) {
+    let (claims, _) =  auth::Auth::authorize(&req)?;/* {
         Ok(claims) => claims,
         Err(err) => return Ok(err.into()),
-    };
+    };*/
 
     let slug = req.param("slug")?;
     let filter = ArticleFilterBySlug { slug };
@@ -657,7 +717,7 @@ async fn unfavorite_article(req: Request) -> tide::Result {
         Ok(article) => {
             Ok(json!(ArticleResponseWrapped::from_article(article)).into())
         },
-        Err(err) => err.into(),
+        Err(err) => Err(err.into()),
     };
     res
 }
@@ -665,7 +725,7 @@ async fn unfavorite_article(req: Request) -> tide::Result {
 async fn feed_articles(req: Request) -> tide::Result {
     let (claims, _) = match auth::Auth::authorize(&req) {
         Ok(claims) => claims,
-        Err(err) => return Ok(err.into()),
+        Err(err) => return Err(err.into()),
     };
 
     let filter = ArticleFilterFeed { follower: &claims.username };
@@ -673,10 +733,9 @@ async fn feed_articles(req: Request) -> tide::Result {
 
     let res = match db::get_articles(req.state(), filter, limit_offset).await {
         Ok(articles) => {
-//            Ok(json!(ArticleResponseWrapped::from_article(article)).into())
             Ok(json!(articles).into())
         },
-        Err(err) => err.into(),
+        Err(err) => Err(err.into()),
     };
     res
 }

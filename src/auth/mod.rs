@@ -22,22 +22,20 @@ impl Auth {
             email: user.email.clone(), 
         };
 
-        if let Ok(token) = encode(
+        user.token = Some( encode(
             &header, 
             &claims, 
-            &EncodingKey::from_secret(Self::JWT_SECRET)) {
-            user.token = Some(token);
-            Ok(json!(user).into())
-        } else {
-            Ok(errors::AuthenticationError::TokenCreationError.into())
-        }
+            &EncodingKey::from_secret(Self::JWT_SECRET))?
+        );
+
+        Ok(json!(user).into())
     }
 
-    pub fn authorize(req: &crate::Request) -> Result<(Claims, String), errors::AuthenticationError> {
+    pub fn authorize(req: &crate::Request) -> Result<(Claims, String), tide::Error> {
         let hdr = req.header(http_types::headers::AUTHORIZATION)
-            .ok_or(errors::AuthenticationError::NoAuthorizationHeaderInRequest)?
+            .ok_or(tide::Error::from_str(tide::StatusCode::Unauthorized, "no authorization header in request"))?
             .get(0)
-            .ok_or(errors::AuthenticationError::NoTokenInRequestHeader)?;
+            .ok_or(tide::Error::from_str(tide::StatusCode::Unauthorized, "no token in request header"))?;
         
         let token = hdr.as_str().trim_start_matches(Self::TOKEN).trim_start();
         let mut validation = Validation::new(Algorithm::HS512);
@@ -47,7 +45,7 @@ impl Auth {
                 token, 
                 &DecodingKey::from_secret(Self::JWT_SECRET), 
                 &validation) 
-            .map_err(|_| errors::AuthenticationError::InvalidTokenInRequest)?;
+            .map_err(|_| tide::Error::from_str(tide::StatusCode::Unauthorized, "invalid token in request"))?;
 
         Ok((decoded.claims, token.to_string()))
     } 

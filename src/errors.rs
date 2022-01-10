@@ -1,5 +1,6 @@
 use tide::prelude::*;
 use std::error::Error;
+use std::fmt::Display;
 
 const DB_UNIQUE_CONSTRAINT_VIOLATION: &str = "1555";
 const SQLITE_CONSTRAINT_UNIQUE: &str = "2067";
@@ -22,7 +23,7 @@ impl From<validator::ValidationErrors> for FromValidatorError {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub(crate) enum RegistrationError {
 //    InvalidEmail,
     UsernameOrEmailExists,
@@ -32,6 +33,7 @@ pub(crate) enum RegistrationError {
 }
 
 //impl Into<tide::Error> for RegistrationError {
+/*
 impl Into<tide::Result> for RegistrationError {
     fn into(self) -> tide::Result {
         match self {
@@ -48,12 +50,46 @@ impl Into<tide::Result> for RegistrationError {
             Self::NoUserFound(email) => {
                 Err(tide::Error::from_str(tide::StatusCode::NotFound, "user not found"))            },
             Self::NoArticleFound => {
-                Err(tide::Error::from_str(tide::StatusCode::NotFound, "article not found"))            },
+                Err(tide::Error::from_str(tide::StatusCode::Ok, "article not found"))            },
             Self::UnhandledDBError(msg) => {
                 Err(tide::Error::from_str(tide::StatusCode::InternalServerError, 
                     format!("Unhandled db error: {}", msg)))            
             },              
         }
+    }
+}
+*/
+
+impl std::fmt::Display for RegistrationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!( f, "{}", 
+            match self {
+                Self::UsernameOrEmailExists => "username or email is already taken".to_string(),
+                Self::NoUserFound(email) => format!("user with {} not found", email),
+                Self::NoArticleFound => "article not found".to_string(),
+                Self::UnhandledDBError(msg) =>  
+                        format!("Unhandled db error: {}", msg),
+            }
+        )
+    }
+}
+
+impl Into<tide::Error> for RegistrationError {
+    fn into(self) -> tide::Error {
+        let status = match self {
+//            Self::InvalidEmail => {
+//                "email is invalid".to_string()
+//            },
+            Self::UsernameOrEmailExists 
+            |
+            Self::NoUserFound(_)  
+            |
+            Self::NoArticleFound => 
+                tide::StatusCode::Ok,
+            Self::UnhandledDBError(_) => 
+                tide::StatusCode::InternalServerError, 
+        };
+        tide::Error::from_str(status, json!({ "errors":{"body": [ self.to_string() ] }}))
     }
 }
 
@@ -73,8 +109,8 @@ impl From<sqlx::Error> for RegistrationError {
         }
     }
 }
-
-#[derive(Serialize)]
+/*
+#[derive(Debug, Serialize)]
 pub(crate) enum AuthenticationError {
     TokenCreationError,
     NoAuthorizationHeaderInRequest,
@@ -82,13 +118,14 @@ pub(crate) enum AuthenticationError {
     InvalidTokenInRequest,
 }
 
-impl Into<tide::Response> for AuthenticationError {
-    fn into(self) -> tide::Response {
+impl std::error::Error for AuthenticationError {
+}
+
+impl std::fmt::Display for AuthenticationError{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let message = match self {
             Self::TokenCreationError => {
-                let mut response = tide::Response::from(tide::StatusCode::UnprocessableEntity);
-                response.set_body(json!({ "errors":{"body": [ "authentication token not created".to_string() ] }}));
-                return response;
+                "token creation error".to_string()
             },
             Self::NoAuthorizationHeaderInRequest => {
                 "no authorization header in request".to_string()
@@ -100,8 +137,13 @@ impl Into<tide::Response> for AuthenticationError {
                 "invalid token in request".to_string()
             },
         };
-        let mut response = tide::Response::from(tide::StatusCode::Unauthorized);
-        response.set_body(json!({ "errors":{"body": [ message ] }}));
-        response
+        write!(f, "{}", message)
     }
 }
+
+impl Into<tide::Error> for AuthenticationError {
+    fn into(self) -> tide::Error {
+        Err(tide::Error::from_str(tide::StatusCode::Unauthorized, self.to_string()))
+    }
+}
+*/

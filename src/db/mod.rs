@@ -266,22 +266,6 @@ pub(crate) async fn unfollow(conn: &Pool<Sqlite>,
 
 }
 
-
-
-//use sqlx::value::ValueRef;
-/*
-use sqlx::error::BoxDynError;
-use sqlx::{sqlite::{SqliteValueRef, SqliteTypeInfo}};
-//use std::str::FromStr;
-impl<'r> sqlx::Decode<'r, Sqlite> for TagList {
-    fn decode(value: SqliteValueRef) -> std::result::Result<Self, BoxDynError> {
-        let s = String::decode(value)?;
-//        Ok(Self(s.split(",").map(|s| s.to_string()).collect()))
-        Ok(Self(s))
-    }
-}
-*/
-
 pub(crate) async fn create_article(conn: &Pool<Sqlite>,
     author_name: &str,
     article: &crate::CreateArticleRequest,
@@ -371,15 +355,28 @@ pub(crate) async fn get_articles<F: crate::ArticleFilter>(conn: &Pool<Sqlite>,
         multiple_articles.push( crate::ArticleResponse { article, author } );
     }
 
-    if 0 != multiple_articles.len() {
+//    if 0 != multiple_articles.len() {
         Ok(crate::MultipleArticleResponse::from_articles( multiple_articles ))    
-    } else { 
+/*    } else { 
         Err(crate::errors::RegistrationError::NoArticleFound)
-    }
+    }*/
 }
 
+pub(crate) async fn update_article(conn: &Pool<Sqlite>,
+        filter: crate::UpdateArticleFilter<'_>
+) -> Result<crate::ArticleResponse, crate::errors::RegistrationError>  {
+
+    let statement = format!("UPDATE articles SET {}", filter.to_string());
+    sqlx::query(&statement)
+        .execute(conn)    
+        .await?;
+
+    let updated_slug = filter.updated_slug();
+    get_article(conn, crate::ArticleFilterBySlug { slug: updated_slug })
+        .await
+}
+    
 pub(crate) async fn favorite_article<F: crate::ArticleFilter>(conn: &Pool<Sqlite>,
-//    filter: crate::ArticleFilterEnum<'_>,
     filter: F,
     username: &str,
 ) -> Result<crate::ArticleResponse, crate::errors::RegistrationError>  {
@@ -400,7 +397,6 @@ pub(crate) async fn favorite_article<F: crate::ArticleFilter>(conn: &Pool<Sqlite
 }
 
 pub(crate) async fn unfavorite_article<F: crate::ArticleFilter>(conn: &Pool<Sqlite>,
-//    filter: crate::ArticleFilterEnum<'_>,
     filter: F,
     username: &str,
 ) -> Result<crate::ArticleResponse, crate::errors::RegistrationError>  {
