@@ -270,6 +270,7 @@ async fn main() -> tide::Result<()> {
     app.at("/api/articles").get(get_articles);
     app.at("/api/articles/:slug").get(get_article);
     app.at("/api/articles/:slug/favorite").post(favorite_article);
+    app.at("/api/articles/:slug/favorite").delete(unfavorite_article);
  
     app.listen("127.0.0.1:3000").await?;
 }
@@ -488,9 +489,11 @@ async fn create_article(mut req: Request) -> tide::Result {
     res
 }
 
+trait ArticleFilter: std::fmt::Display {}
+/*
 pub(crate) enum ArticleFilterEnum<'sl> {
     BySlug(&'sl str),
-    ByRest(ArticleFilter),
+    ByRest(ArticleFilterByValues),
 }
 
 impl<'sl> ArticleFilterEnum<'sl> {
@@ -506,32 +509,47 @@ impl std::fmt::Display for ArticleFilterEnum<'_> {
             Self::ByRest(filter) => filter.fmt(f),        
         }
     }
+}*/
+
+#[derive(Deserialize)]
+pub(crate) struct ArticleFilterBySlug<'a> {
+    pub slug: &'a str,
+}
+
+impl ArticleFilter for ArticleFilterBySlug<'_> {}
+impl std::fmt::Display for ArticleFilterBySlug<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!( f, " {}='{}'", "slug", self.slug)
+    }
 }
 
 #[derive(Deserialize)]
 #[serde(default)]
-pub(crate) struct ArticleFilter {
-//    #[serde(skip_serializing_if = "Option::is_none")]
+pub(crate) struct ArticleFilterByValues {
     pub author: Option<String>,
     pub tag: Option<String>,
-//    pub slug: Option<&'sl str>,
-//    pub favorited: bool,
+    pub favorited: Option<String>,
 }
 
-impl Default for ArticleFilter {
+impl ArticleFilter for ArticleFilterByValues {}
+
+impl Default for ArticleFilterByValues {
     fn default() -> Self {
         Self { 
             author: None,
             tag: None,
-//            favorited: None,
+            favorited: None,
         }
     }
 }
 
-impl std::fmt::Display for ArticleFilter {
+impl std::fmt::Display for ArticleFilterByValues {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.author.as_ref().map(|val| write!( f, " {}='{}' AND", "author", val) ).unwrap_or(Ok(()))?;
         self.tag.as_ref().map(|val| write!( f, " {} LIKE '%{}%' AND", "tagList", val) ).unwrap_or(Ok(()))?;
+        self.favorited.as_ref().map(|val| 
+            write!( f, " {}='{}' AND", "favorite_articles.username", val) 
+        ).unwrap_or(Ok(()))?;
 //        self.slug.as_ref().map(|val| write!( f, " {}='{}' AND", "slug", val) ).unwrap_or(Ok(()))?;
 
         //        write!( f, " {}={} AND", "favorited", if self.favorited {1} else {0})?;
@@ -539,9 +557,49 @@ impl std::fmt::Display for ArticleFilter {
     }
 }
 
+#[derive(Deserialize)]
+#[serde(default)]
+pub(crate) struct ArticleFilterFeed<'a> {
+    pub follower: &'a str,
+}
+
+impl ArticleFilter for ArticleFilterFeed<'_> {}
+
+impl std::fmt::Display for ArticleFilterFeed<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!( f, 
+            " {} IN (SELECT celeb_name FROM followers WHERE follower_name='{}')", 
+            "author", self.follower)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(default)]
+pub(crate) struct LimitOffsetFilter {
+    pub limit: Option<i32>,
+    pub offset: Option<i32>,
+}
+
+impl Default for LimitOffsetFilter {
+    fn default() -> Self {
+        Self { 
+            limit: None,
+            offset: None,
+        }
+    }
+}
+
+impl std::fmt::Display for LimitOffsetFilter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.limit.as_ref().map(|val| write!( f, "LIMIT {} ", val) ).unwrap_or(Ok(()))?;
+        self.offset.as_ref().map(|val| write!( f, "OFFSET {}", val) ).unwrap_or(Ok(()))
+    }
+}
+
 async fn get_article(req: Request) -> tide::Result {
     let slug = req.param("slug")?;
-    let filter = ArticleFilterEnum::BySlug(slug);
+//    let filter = ArticleFilterEnum::BySlug(slug);
+    let filter = ArticleFilterBySlug { slug };
 
     let res = match db::get_article(req.state(), filter).await {
         Ok(article) => {
@@ -553,14 +611,11 @@ async fn get_article(req: Request) -> tide::Result {
 }
 
 async fn get_articles(req: Request) -> tide::Result {
-//    let filter: ArticleFilterEnum = if let Ok(slug) = req.param("slug") {
-//        ArticleFilterEnum::BySlug(slug)
-//    } else {
-//        ArticleFilterEnum::ByRest(req.query()?)
-//    };
-    let filter = ArticleFilterEnum::ByRest(req.query()?);
+//    let filter = ArticleFilterEnum::ByRest(req.query()?);
+    let filter: ArticleFilterByValues = req.query()?;
+    let limit_offset: LimitOffsetFilter = req.query()?;
 
-    let res = match db::get_articles(req.state(), filter).await {
+    let res = match db::get_articles(req.state(), filter, limit_offset).await {
         Ok(articles) => {
 //            Ok(json!(ArticleResponseWrapped::from_article(article)).into())
             Ok(json!(articles).into())
@@ -570,7 +625,6 @@ async fn get_articles(req: Request) -> tide::Result {
     res
 }
 
-
 async fn favorite_article(req: Request) -> tide::Result {
     let (claims, _) = match auth::Auth::authorize(&req) {
         Ok(claims) => claims,
@@ -578,7 +632,8 @@ async fn favorite_article(req: Request) -> tide::Result {
     };
 
     let slug = req.param("slug")?;
-    let filter = ArticleFilterEnum::BySlug(slug);
+//    let filter = ArticleFilterEnum::BySlug(slug);
+    let filter = ArticleFilterBySlug { slug };
 
     let res = match db::favorite_article(req.state(), filter, &claims.username).await {
         Ok(article) => {
@@ -589,49 +644,40 @@ async fn favorite_article(req: Request) -> tide::Result {
     res
 }
 
-async fn feed_articles(req: Request) -> tide::Result {
-    Ok(json!("").into())
+async fn unfavorite_article(req: Request) -> tide::Result {
+    let (claims, _) = match auth::Auth::authorize(&req) {
+        Ok(claims) => claims,
+        Err(err) => return Ok(err.into()),
+    };
+
+    let slug = req.param("slug")?;
+    let filter = ArticleFilterBySlug { slug };
+
+    let res = match db::unfavorite_article(req.state(), filter, &claims.username).await {
+        Ok(article) => {
+            Ok(json!(ArticleResponseWrapped::from_article(article)).into())
+        },
+        Err(err) => err.into(),
+    };
+    res
 }
 
-async fn articles(mut req: Request) -> tide::Result {
-        let author: Author = req.body_json().await?;
+async fn feed_articles(req: Request) -> tide::Result {
+    let (claims, _) = match auth::Auth::authorize(&req) {
+        Ok(claims) => claims,
+        Err(err) => return Ok(err.into()),
+    };
 
-        let articles = json! ({
-                "articles":[{
-                  "slug": "how-to-train-your-dragon",
-                  "title": "How to train your dragon",
-                  "description": "Ever wonder how?",
-                  "body": "It takes a Jacobian",
-                  "tagList": ["dragons", "training"],
-                  "createdAt": "2016-02-18T03:22:56.637Z",
-                  "updatedAt": "2016-02-18T03:48:35.824Z",
-                  "favorited": false,
-                  "favoritesCount": 0,
-                  "author": {
-                    "username": "jake",
-                    "bio": "I work at statefarm",
-                    "image": "https://i.stack.imgur.com/xHWG8.jpg",
-                    "following": false
-                  }
-                }, {
-                  "slug": "how-to-train-your-dragon-2",
-                  "title": "How to train your dragon 2",
-                  "description": "So toothless",
-                  "body": "It a dragon",
-                  "tagList": ["dragons", "training"],
-                  "createdAt": "2016-02-18T03:22:56.637Z",
-                  "updatedAt": "2016-02-18T03:48:35.824Z",
-                  "favorited": false,
-                  "favoritesCount": 0,
-                  "author": {
-                    "username": "jake",
-                    "bio": "I work at statefarm",
-                    "image": "https://i.stack.imgur.com/xHWG8.jpg",
-                    "following": false
-                  }
-                }],
-                "articlesCount": 2     
-        });
-        Ok(articles.into())
-    }
+    let filter = ArticleFilterFeed { follower: &claims.username };
+    let limit_offset: LimitOffsetFilter = req.query()?;
+
+    let res = match db::get_articles(req.state(), filter, limit_offset).await {
+        Ok(articles) => {
+//            Ok(json!(ArticleResponseWrapped::from_article(article)).into())
+            Ok(json!(articles).into())
+        },
+        Err(err) => err.into(),
+    };
+    res
+}
 

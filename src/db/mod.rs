@@ -306,40 +306,34 @@ pub(crate) async fn create_article(conn: &Pool<Sqlite>,
     .execute(conn)    
     .await?;
 
-
- /*   let article = sqlx::query_as::<_, crate::Article>(
-        "SELECT * FROM articles WHERE author = ? AND title = ?"
-    )
-    .bind(&author_name)
-    .bind(&article.title)
-    .fetch_one(conn)    
-    .await?;*/
     let article = get_article(conn, 
-        crate::ArticleFilterEnum::BySlug(&article.slug)
+//        crate::ArticleFilterEnum::BySlug(&article.slug)
+        crate::ArticleFilterBySlug { slug: &article.slug }
     ).await?;
     Ok(article)
-
-//    let author = crate::AuthorWrapped{author: get_profile(conn, author_name).await};
-//    let author = get_profile(conn, author_name).await;
-
-  //  .ok_or(unimplemented!());
-//    Ok(crate::ArticleResponse { article, author })
 }
 
-fn get_article_clause(filter: &crate::ArticleFilterEnum<'_>) -> String  {
+fn get_article_clause<F: crate::ArticleFilter>(
+//    filter: &crate::ArticleFilterEnum<'_>, 
+    filter: &F, 
+    limit_offset: &crate::LimitOffsetFilter,
+) -> String  {
     format!(" \
         SELECT *, (favoritesCount>0) as favorited FROM \
             (SELECT articles.id as id, slug, title, body, description, tagList, createdAt, updatedAt, author,	COUNT(favorite_articles.id) as favoritesCount FROM articles \
-            LEFT JOIN favorite_articles ON articles.id = favorite_articles.id WHERE {} ORDER BY updatedAt) \
+            LEFT JOIN favorite_articles ON articles.id = favorite_articles.id WHERE {} \
+            ORDER BY updatedAt) \
+            {}
         WHERE id IS NOT NULL", 
-    filter.to_string())
+    filter.to_string(), limit_offset.to_string())
 }
 
-pub(crate) async fn get_article(conn: &Pool<Sqlite>,
-    filter: crate::ArticleFilterEnum<'_>
+pub(crate) async fn get_article<F: crate::ArticleFilter>(conn: &Pool<Sqlite>,
+//    filter: crate::ArticleFilterEnum<'_>
+    filter: F
 ) -> Result<crate::ArticleResponse, crate::errors::RegistrationError>  {
 
-    let statement = get_article_clause(&filter);
+    let statement = get_article_clause(&filter, &crate::LimitOffsetFilter::default());
 
     let article = sqlx::query_as::<_, crate::Article>(
         &statement
@@ -355,11 +349,13 @@ pub(crate) async fn get_article(conn: &Pool<Sqlite>,
     }
 }
 
-pub(crate) async fn get_articles(conn: &Pool<Sqlite>,
-    filter: crate::ArticleFilterEnum<'_>
+pub(crate) async fn get_articles<F: crate::ArticleFilter>(conn: &Pool<Sqlite>,
+ //   filter: crate::ArticleFilterEnum<'_>,
+    filter: F,
+    limit_offset: crate::LimitOffsetFilter
 ) -> Result<crate::MultipleArticleResponse, crate::errors::RegistrationError>  {
   
-    let statement = get_article_clause(&filter);
+    let statement = get_article_clause(&filter, &limit_offset);
 
     let articles = sqlx::query_as::<_, crate::Article>(
         &statement
@@ -380,33 +376,46 @@ pub(crate) async fn get_articles(conn: &Pool<Sqlite>,
     } else { 
         Err(crate::errors::RegistrationError::NoArticleFound)
     }
-
-/*    if let Some(article) = article {
-        let author = get_profile(conn, &article.author).await;
-        Ok(crate::ArticleResponse { article, author })    
-    } else {
-        Err(crate::errors::RegistrationError::NoArticleFound)
-    }*/
 }
 
-pub(crate) async fn favorite_article(conn: &Pool<Sqlite>,
-    filter: crate::ArticleFilterEnum<'_>,
+pub(crate) async fn favorite_article<F: crate::ArticleFilter>(conn: &Pool<Sqlite>,
+//    filter: crate::ArticleFilterEnum<'_>,
+    filter: F,
     username: &str,
 ) -> Result<crate::ArticleResponse, crate::errors::RegistrationError>  {
 
-    let statement = "
-        INSERT INTO favorite_articles (id, username) VALUES (
-            (SELECT id FROM articles WHERE slug=?), ?)
-            ON CONFLICT DO NOTHING
-        ";
+    let statement = format!("\
+        INSERT INTO favorite_articles (id, username) VALUES ( \
+            (SELECT id FROM articles WHERE {}), '{}') \
+            ON CONFLICT DO NOTHING; \
+        ", filter.to_string(), username);
     
     sqlx::query(
         &statement
     )
-    .bind(&filter.to_string())
-    .bind(&username)
     .execute(conn)
-    .await?;    
+    .await?;        
 
     get_article(conn, filter).await
 }
+
+pub(crate) async fn unfavorite_article<F: crate::ArticleFilter>(conn: &Pool<Sqlite>,
+//    filter: crate::ArticleFilterEnum<'_>,
+    filter: F,
+    username: &str,
+) -> Result<crate::ArticleResponse, crate::errors::RegistrationError>  {
+
+    let statement = format!("\
+        DELETE FROM favorite_articles WHERE favorite_articles.id= \
+            (SELECT id FROM articles WHERE {}) \
+        ", filter.to_string());
+    
+    sqlx::query(
+        &statement
+    )
+    .execute(conn)
+    .await?;        
+
+    get_article(conn, filter).await
+}
+
