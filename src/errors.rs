@@ -29,6 +29,7 @@ pub(crate) enum RegistrationError {
     UsernameOrEmailExists,
     NoUserFound(String),
     NoArticleFound,
+    NoCommentFound,
     UnhandledDBError(String),
 }
 
@@ -67,6 +68,7 @@ impl std::fmt::Display for RegistrationError {
                 Self::UsernameOrEmailExists => "username or email is already taken".to_string(),
                 Self::NoUserFound(email) => format!("user with {} not found", email),
                 Self::NoArticleFound => "article not found".to_string(),
+                Self::NoCommentFound => "comment not found".to_string(),
                 Self::UnhandledDBError(msg) =>  
                         format!("Unhandled db error: {}", msg),
             }
@@ -74,9 +76,10 @@ impl std::fmt::Display for RegistrationError {
     }
 }
 
-impl Into<tide::Error> for RegistrationError {
-    fn into(self) -> tide::Error {
-        let status = match self {
+impl Into<tide::Result> for RegistrationError {
+    fn into(self) -> tide::Result {
+        let message = self.to_string();
+        match self {
 //            Self::InvalidEmail => {
 //                "email is invalid".to_string()
 //            },
@@ -84,12 +87,17 @@ impl Into<tide::Error> for RegistrationError {
             |
             Self::NoUserFound(_)  
             |
-            Self::NoArticleFound => 
-                tide::StatusCode::Ok,
+            Self::NoArticleFound
+            |
+            Self::NoCommentFound => {
+                Ok(tide::Response::from(json!({ "errors":{"body": [ message ] }})))    
+            }
             Self::UnhandledDBError(_) => 
-                tide::StatusCode::InternalServerError, 
-        };
-        tide::Error::from_str(status, json!({ "errors":{"body": [ self.to_string() ] }}))
+//                tide::StatusCode::InternalServerError, 
+                Err(tide::Error::from_str(tide::StatusCode::InternalServerError, 
+                    json!({ "errors":{"body": [ message ] }})))    
+        }
+//        tide::Error::from_str(status, json!({ "errors":{"body": [ message ] }}))
     }
 }
 

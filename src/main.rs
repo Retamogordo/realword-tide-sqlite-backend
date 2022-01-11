@@ -144,17 +144,80 @@ where
 }
 
 #[derive(sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+#[sqlx(rename_all = "camelCase")]
+pub(crate) struct Comment { 
+    id: i32,
+    #[serde(serialize_with = "transform_datetime")]    
+    created_at: chrono::DateTime<chrono::Utc>,
+    #[serde(serialize_with = "transform_datetime")]    
+    updated_at: chrono::DateTime<chrono::Utc>,
+    body: String,
+    #[serde(skip_serializing)]
+    author: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub(crate) struct CommentResponse {
+    pub author: Option<Profile>,
+    #[serde(flatten)]
+    pub comment: Comment,
+}
+
+#[derive(Debug, Serialize)]
+struct CommentResponseWrapped {
+    comment: CommentResponse,
+}
+
+impl CommentResponseWrapped {
+    fn from_comment(comment: CommentResponse) -> Self {
+        Self { comment }
+    }
+}
+
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MultipleCommentResponse {
+    pub comments: Vec<CommentResponse>,
+}
+
+impl MultipleCommentResponse {
+    fn from_comments(comments: Vec<CommentResponse>) -> Self {
+        Self { 
+            comments,
+        }
+    }
+}
+
+
 #[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")] 
+struct AddCommentRequest { 
+    body: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct AddCommentRequestWrapped { 
+    comment: AddCommentRequest,
+}
+
+#[derive(sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 #[sqlx(rename_all = "camelCase")]
 pub(crate) struct Article { 
-    #[serde(skip_serializing)]
+//    #[serde(skip_serializing)]
     slug: Option<String>,
     title: String,
     description: Option<String>,
     body: String,
+    #[serde(serialize_with = "transform_string_to_vec")]    
     tag_list: Option<String>,
+    #[serde(serialize_with = "transform_datetime")]    
     created_at: chrono::DateTime<chrono::Utc>,
+    #[serde(serialize_with = "transform_datetime")]    
     updated_at: chrono::DateTime<chrono::Utc>,
     favorited: bool,
     favorites_count: u32,
@@ -162,6 +225,29 @@ pub(crate) struct Article {
     author: String,
 }
 
+fn transform_string_to_vec<S>(tag_list: &Option<String>, serializer: S) -> std::result::Result<S::Ok, S::Error>
+where
+    S: serde::Serializer, {
+
+    tag_list.as_ref().and_then(|tags| {
+        let mut tag_vec = tags.split(",")
+            .filter(|tag| *tag != "")
+            .map(|tag| tag.to_string())
+            .collect::<Vec<String>>();
+            
+        tag_vec.sort_by_key(|tag| tag.to_lowercase());
+        Some(tag_vec)
+    })
+    .serialize(serializer)
+}
+
+fn transform_datetime<S>(dt: &chrono::DateTime<chrono::Utc>, serializer: S) -> std::result::Result<S::Ok, S::Error>
+where
+    S: serde::Serializer, {
+        dt.checked_add_signed(chrono::Duration::milliseconds(42))
+        .serialize(serializer)
+}
+/*
 use serde::ser::SerializeStruct;
 impl Serialize for Article {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
@@ -189,7 +275,7 @@ impl Serialize for Article {
         state.end()
     }
 }
-
+*/
 //#[derive(Debug, Serialize, Deserialize, Clone)]
 //pub(crate) struct AuthorWrapped(Option<Profile>)
 
@@ -272,6 +358,8 @@ async fn main() -> tide::Result<()> {
     app.at("/api/articles/:slug").get(get_article);
     app.at("/api/articles/:slug/favorite").post(favorite_article);
     app.at("/api/articles/:slug/favorite").delete(unfavorite_article);
+    app.at("/api/articles/:slug/comments").post(add_comment);
+    app.at("/api/articles/:slug/comments").get(get_comments);
  
     app.listen("127.0.0.1:3000").await?;
 }
@@ -352,11 +440,11 @@ async fn register(mut req: Request) -> tide::Result {
 //    let res = req.body_string().await;
     println!("in register");
 //    tide::Response
-    let mut user: UserRegWrapped = req.body_json().await?;
+    let mut wrapped: UserRegWrapped = req.body_json().await?;
 
 //    user.user.email = "asd".to_string();
 
-    match user.user.validate() {
+    match wrapped.user.validate() {
         Ok(_) => (),
         Err(err) => return Ok(errors::FromValidatorError(err).into())
     };
@@ -367,13 +455,13 @@ async fn register(mut req: Request) -> tide::Result {
 //        .or_else(|err| err.into())?
     )).into())
 */
-    let res = match db::register_user(req.state(), &user.user).await {
+    let res = match db::register_user(req.state(), &wrapped.user).await {
         Ok(()) => {
-            let mut user = user.user.into();
+            let mut user = wrapped.user.into();
             auth::Auth::create_token(&mut user)?;
             Ok(json!(UserWrapped::from_user(user)).into())
         },
-        Err(err) => Err(err.into()),
+        Err(err) => err.into(),
     };
     res          
 }
@@ -387,17 +475,14 @@ async fn login(mut req: Request) -> tide::Result {
             auth::Auth::create_token(&mut user)?;
             Ok(json!(UserWrapped::from_user(user)).into())
         },
-        Err(err) => Err(err.into()),
+        Err(err) => err.into(),
     };
     res          
 }
 
 async fn current_user(req: Request) -> tide::Result {
 
-    let (claims, token) = auth::Auth::authorize(&req)?;/* {
-        Ok(claims) => claims,
-        Err(err) => return Ok(err.into()),
-    };*/
+    let (claims, token) = auth::Auth::authorize(&req)?;
 
     let res = match db::get_user_by_username(req.state(), &claims.username).await {
         Ok(user) => {
@@ -405,7 +490,7 @@ async fn current_user(req: Request) -> tide::Result {
             user.token = Some(token);
             Ok(json!(UserWrapped::from_user(user)).into())
         },
-        Err(err) => Err(err.into()),
+        Err(err) => err.into(),
     };
     res
 }
@@ -418,7 +503,7 @@ async fn profile(req: Request) -> tide::Result {
             Ok(json!(ProfileWrapped::from_profile(profile)).into())
         },
         None => 
-        Err(crate::errors::RegistrationError::NoUserFound(username.to_string()).into())
+        crate::errors::RegistrationError::NoUserFound(username.to_string()).into()
     };
     res          
 }
@@ -426,10 +511,6 @@ async fn profile(req: Request) -> tide::Result {
 
 async fn update_user(mut req: Request) -> tide::Result {
     let (claims, token) = auth::Auth::authorize(&req)?;
-    /* {
-        Ok(claims) => claims,
-        Err(err) => return Ok(err.into()),
-    };*/
 
     let update_user: UserUpdateWrapped = req.body_json().await?;
 
@@ -439,7 +520,7 @@ async fn update_user(mut req: Request) -> tide::Result {
             user.token = Some(token);
             Ok(json!(UserWrapped::from_user(user)).into())
         },
-        Err(err) => Err(err.into()),
+        Err(err) => err.into(),
     };
     res
 }
@@ -454,7 +535,7 @@ async fn follow(req: Request) -> tide::Result {
             let profile: Profile = profile.into();
             Ok(json!(ProfileWrapped::from_profile(profile)).into())
         },
-        Err(err) => Err(err.into()),
+        Err(err) => err.into(),
     };
     res
 }
@@ -469,7 +550,7 @@ async fn unfollow(req: Request) -> tide::Result {
             let profile: Profile = profile.into();
             Ok(json!(ProfileWrapped::from_profile(profile)).into())
         },
-        Err(err) => Err(err.into()),
+        Err(err) => err.into(),
     };
     res
 }
@@ -483,7 +564,7 @@ async fn create_article(mut req: Request) -> tide::Result {
         Ok(article) => {
             Ok(json!(ArticleResponseWrapped::from_article(article)).into())
         },
-        Err(err) => Err(err.into()),
+        Err(err) => err.into(),
     };
     res
 }
@@ -549,6 +630,50 @@ impl std::fmt::Display for ArticleFilterFeed<'_> {
         write!( f, 
             " {} IN (SELECT celeb_name FROM followers WHERE follower_name='{}')", 
             "author", self.follower)
+    }
+}
+
+pub(crate) enum OrderByFilter<'a> {
+    Ascending(&'a str),
+    Descending(&'a str),
+    None,
+}
+
+impl std::fmt::Display for OrderByFilter<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {         
+        match self {
+            OrderByFilter::Ascending(row_name) => write!( f, "ORDER BY {} ASC ", row_name),
+            OrderByFilter::Descending(row_name) => write!( f, "ORDER BY {} DESC ", row_name),
+            OrderByFilter::None => Ok(()),
+        }
+    }
+}
+
+pub(crate) struct CommentFilterByValues<'a> {
+    pub author: Option<&'a str>,
+    pub article_slug: Option<&'a str>,
+//    pub order: OrderByFilter<'a>,
+}
+
+impl Default for CommentFilterByValues<'_> {
+    fn default() -> Self {
+        Self { 
+            author: None,
+            article_slug: None,
+        }
+    }
+}
+
+impl std::fmt::Display for CommentFilterByValues<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.author.as_ref().map(|val| write!( f, " {}='{}' AND", "author", val) ).unwrap_or(Ok(()))?;
+        self.article_slug.as_ref().map(|val|
+            write!( f, 
+                " {} IN (SELECT id FROM articles WHERE slug='{}') AND", 
+                "article_id", val)
+        ).unwrap_or(Ok(()))?;
+
+        write!( f, " 1=1 ")
     }
 }
 
@@ -648,7 +773,7 @@ async fn get_article(req: Request) -> tide::Result {
         Ok(article) => {
             Ok(json!(ArticleResponseWrapped::from_article(article)).into())
         },
-        Err(err) => Err(err.into()),
+        Err(err) => err.into(),
     };
     res
 }
@@ -656,14 +781,15 @@ async fn get_article(req: Request) -> tide::Result {
 async fn get_articles(req: Request) -> tide::Result {
 //    let filter = ArticleFilterEnum::ByRest(req.query()?);
     let filter: ArticleFilterByValues = req.query()?;
+    let order_by = OrderByFilter::Descending("updatedAt");
     let limit_offset: LimitOffsetFilter = req.query()?;
 
-    let res = match db::get_articles(req.state(), filter, limit_offset).await {
+    let res = match db::get_articles(req.state(), filter, order_by, limit_offset).await {
         Ok(articles) => {
 //            Ok(json!(ArticleResponseWrapped::from_article(article)).into())
             Ok(json!(articles).into())
         },
-        Err(err) => Err(err.into()),
+        Err(err) => err.into(),
     };
     res
 }
@@ -679,36 +805,28 @@ async fn update_article(mut req: Request) -> tide::Result {
         Ok(article) => {
             Ok(json!(ArticleResponseWrapped::from_article(article)).into())
         },
-        Err(err) => Err(err.into()),
+        Err(err) => err.into(),
     };
     res
 }
 
 async fn favorite_article(req: Request) -> tide::Result {
     let (claims, _) = auth::Auth::authorize(&req)?;
-    /* {
-        Ok(claims) => claims,
-        Err(err) => return Ok(err.into()),
-    };*/
 
     let slug = req.param("slug")?;
-//    let filter = ArticleFilterEnum::BySlug(slug);
     let filter = ArticleFilterBySlug { slug };
 
     let res = match db::favorite_article(req.state(), filter, &claims.username).await {
         Ok(article) => {
             Ok(json!(ArticleResponseWrapped::from_article(article)).into())
         },
-        Err(err) => Err(err.into()),
+        Err(err) => err.into(),
     };
     res
 }
 
 async fn unfavorite_article(req: Request) -> tide::Result {
-    let (claims, _) =  auth::Auth::authorize(&req)?;/* {
-        Ok(claims) => claims,
-        Err(err) => return Ok(err.into()),
-    };*/
+    let (claims, _) =  auth::Auth::authorize(&req)?;
 
     let slug = req.param("slug")?;
     let filter = ArticleFilterBySlug { slug };
@@ -717,26 +835,68 @@ async fn unfavorite_article(req: Request) -> tide::Result {
         Ok(article) => {
             Ok(json!(ArticleResponseWrapped::from_article(article)).into())
         },
-        Err(err) => Err(err.into()),
+        Err(err) => err.into(),
     };
     res
 }
 
 async fn feed_articles(req: Request) -> tide::Result {
-    let (claims, _) = match auth::Auth::authorize(&req) {
-        Ok(claims) => claims,
-        Err(err) => return Err(err.into()),
-    };
+    let (claims, _) = auth::Auth::authorize(&req)?;
 
     let filter = ArticleFilterFeed { follower: &claims.username };
+    let order_by = OrderByFilter::Descending("updatedAt");
     let limit_offset: LimitOffsetFilter = req.query()?;
 
-    let res = match db::get_articles(req.state(), filter, limit_offset).await {
+    let res = match db::get_articles(req.state(), filter, order_by, limit_offset).await {
         Ok(articles) => {
             Ok(json!(articles).into())
         },
-        Err(err) => Err(err.into()),
+        Err(err) => err.into(),
     };
     res
 }
 
+async fn add_comment(mut req: Request) -> tide::Result {
+    let (claims, _) = auth::Auth::authorize(&req)?;
+
+    let wrapped: AddCommentRequestWrapped = req.body_json().await?;
+    let slug = req.param("slug")?;
+    let author = &claims.username;
+
+    let filter = ArticleFilterBySlug { slug };
+
+    let res = match db::add_comment(req.state(), filter, author, &wrapped.comment).await {
+        Ok(comment) => {
+          Ok(json!(CommentResponseWrapped::from_comment(comment)).into())
+//          Ok(json!("").into())
+        },
+        Err(err) => err.into(),
+    };
+    res
+}
+
+async fn get_comments(req: Request) -> tide::Result {
+        let mut filter = CommentFilterByValues { 
+            article_slug: Some(req.param("slug")?),
+            author: None
+        };
+
+        let tmp = auth::Auth::authorize(&req).ok().and_then(|(claims, _)| Some(claims.username));
+        filter.author = tmp.as_deref();
+
+/*        if let Ok((claims, _)) = auth::Auth::authorize(&req) {
+            filter.author = Some(&claims.username);
+        }*/
+        let order_by = OrderByFilter::Descending("id");
+        let limit_offset: LimitOffsetFilter = LimitOffsetFilter::default();
+    
+        let res = match db::get_comments(req.state(), filter, order_by, limit_offset).await {
+            Ok(comments) => {
+    //            Ok(json!(ArticleResponseWrapped::from_article(article)).into())
+                Ok(json!(comments).into())
+            },
+            Err(err) => err.into(),
+        };
+        res
+    }
+    
