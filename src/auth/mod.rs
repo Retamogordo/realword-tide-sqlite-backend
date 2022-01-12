@@ -1,6 +1,6 @@
 use tide::prelude::*;
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
-use crate::errors;
+use crate::models::user::{User};
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct Claims {
@@ -10,13 +10,12 @@ pub(crate) struct Claims {
 pub(crate) struct Auth {
 }
 
-
 impl Auth {
     const TOKEN: &'static str = "Token ";
     const JWT_SECRET: &'static [u8] = b"secret";
 
-    pub fn create_token(user: &mut crate::User) -> tide::Result {
-        let header = Header::new(Algorithm::HS512);
+    pub fn create_token(user: &mut User) -> tide::Result {
+            let header = Header::new(Algorithm::HS512);
         let claims = Claims { 
             username: user.username.clone(),
             email: user.email.clone(), 

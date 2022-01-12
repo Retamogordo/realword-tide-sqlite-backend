@@ -7,13 +7,14 @@ const SQLITE_CONSTRAINT_UNIQUE: &str = "2067";
 
 pub(crate) struct FromValidatorError(pub validator::ValidationErrors);
 
-impl Into<tide::Response> for FromValidatorError {
-    fn into(self) -> tide::Response {
+impl Into<tide::Result> for FromValidatorError {
+    fn into(self) -> tide::Result {
        //let message = self.0.clone().to_string();
-        let err = tide::Error::from_str(tide::StatusCode::UnprocessableEntity, "");
-        let mut response: tide::Response = err.into();
-        response.set_body(json!({ "errors":{"body": [ self.0.to_string() ] }}));
-        response
+//        let err = tide::Error::from_str(tide::StatusCode::UnprocessableEntity, "");
+        Ok(tide::Response::from(json!({ "errors":{"body": [ self.0.to_string() ] }})))    
+//        let mut response: tide::Response = err.into();
+//        response.set_body(json!({ "errors":{"body": [ self.0.to_string() ] }}));
+//        Ok(response)
     }
 }
 
@@ -33,33 +34,6 @@ pub(crate) enum RegistrationError {
     UnhandledDBError(String),
 }
 
-//impl Into<tide::Error> for RegistrationError {
-/*
-impl Into<tide::Result> for RegistrationError {
-    fn into(self) -> tide::Result {
-        match self {
-//            Self::InvalidEmail => {
-//                "email is invalid".to_string()
-//            },
-            Self::UsernameOrEmailExists => {
-                let message = "username or email is already taken".to_string();
-                let err = tide::Error::from_str(tide::StatusCode::UnprocessableEntity, message.clone());
-                let mut response: tide::Response = err.into();
-                response.set_body(json!({ "errors":{"body": [ message ] }}));
-                Ok(response)
-            },
-            Self::NoUserFound(email) => {
-                Err(tide::Error::from_str(tide::StatusCode::NotFound, "user not found"))            },
-            Self::NoArticleFound => {
-                Err(tide::Error::from_str(tide::StatusCode::Ok, "article not found"))            },
-            Self::UnhandledDBError(msg) => {
-                Err(tide::Error::from_str(tide::StatusCode::InternalServerError, 
-                    format!("Unhandled db error: {}", msg)))            
-            },              
-        }
-    }
-}
-*/
 
 impl std::fmt::Display for RegistrationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
