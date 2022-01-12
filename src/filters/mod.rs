@@ -80,10 +80,16 @@ pub(crate) enum OrderByFilter<'a> {
 impl std::fmt::Display for OrderByFilter<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {         
         match self {
-            OrderByFilter::Ascending(row_name) => write!( f, "ORDER BY {} ASC ", row_name),
-            OrderByFilter::Descending(row_name) => write!( f, "ORDER BY {} DESC ", row_name),
-            OrderByFilter::None => Ok(()),
+            Self::Ascending(row_name) => write!( f, "ORDER BY {} ASC ", row_name),
+            Self::Descending(row_name) => write!( f, "ORDER BY {} DESC ", row_name),
+            Self::None => Ok(()),
         }
+    }
+}
+
+impl Default for OrderByFilter<'_> {
+    fn default() -> Self {
+        Self::None
     }
 }
 

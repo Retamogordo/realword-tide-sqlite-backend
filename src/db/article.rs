@@ -26,9 +26,9 @@ pub(crate) async fn create_article(conn: &Pool<Sqlite>,
     .execute(conn)    
     .await?;
 
-    let article = get_article(conn, 
+    let article = get_one(conn, 
 //        crate::filters::ArticleFilterEnum::BySlug(&article.slug)
-        crate::filters::ArticleFilterBySlug { slug: &article.slug }
+        crate::filters::ArticleFilterBySlug { slug: &article.slug },
     ).await?;
     Ok(article)
 }
@@ -43,12 +43,12 @@ fn get_article_clause<F: crate::filters::ArticleFilter>(
         SELECT *, (favoritesCount>0) as favorited FROM \
             (SELECT articles.id as id, slug, title, body, description, tagList, createdAt, updatedAt, author,	COUNT(favorite_articles.id) as favoritesCount FROM articles \
             LEFT JOIN favorite_articles ON articles.id = favorite_articles.id WHERE {} \
-            {}) \
-            {}
+            {} {}) \
         WHERE id IS NOT NULL", 
     filter, order_by, limit_offset)
 }
 
+/*
 pub(crate) async fn get_article<F: filters::ArticleFilter>(conn: &Pool<Sqlite>,
 //    filter: article::filters::ArticleFilterEnum<'_>
     filter: F
@@ -71,13 +71,40 @@ pub(crate) async fn get_article<F: filters::ArticleFilter>(conn: &Pool<Sqlite>,
         Err(errors::RegistrationError::NoArticleFound)
     }
 }
+*/
+pub(crate) async fn get_one<F: crate::filters::ArticleFilter>(conn: &Pool<Sqlite>,
+    filter: F,
+) -> Result<article::ArticleResponse, errors::RegistrationError>  {
+    let limit_offset = crate::filters::LimitOffsetFilter { 
+        limit: Some(1), 
+        offset: None 
+    };
 
-pub(crate) async fn get_articles<F: crate::filters::ArticleFilter>(conn: &Pool<Sqlite>,
- //   filter: crate::filters::ArticleFilterEnum<'_>,
+    let articles = get_articles(conn, filter, crate::filters::OrderByFilter::default(), limit_offset).await?;
+    if let Some(article) = articles.into_iter().next() {
+        Ok(article)    
+    } else {
+        Err(errors::RegistrationError::NoArticleFound)
+    }
+}
+
+pub(crate) async fn get_all<F: crate::filters::ArticleFilter>(conn: &Pool<Sqlite>,
     filter: F,
     order_by: crate::filters::OrderByFilter<'_>,
     limit_offset: crate::filters::LimitOffsetFilter
 ) -> Result<article::MultipleArticleResponse, errors::RegistrationError>  {
+
+    Ok(article::MultipleArticleResponse::from_articles( 
+        get_articles(conn, filter, order_by, limit_offset).await?)
+    )    
+}
+
+async fn get_articles<F: crate::filters::ArticleFilter>(conn: &Pool<Sqlite>,
+ //   filter: crate::filters::ArticleFilterEnum<'_>,
+    filter: F,
+    order_by: crate::filters::OrderByFilter<'_>,
+    limit_offset: crate::filters::LimitOffsetFilter
+) -> Result<Vec::<article::ArticleResponse>, errors::RegistrationError>  {
   
     let statement = get_article_clause(&filter, &order_by, &limit_offset);
 
@@ -96,8 +123,9 @@ pub(crate) async fn get_articles<F: crate::filters::ArticleFilter>(conn: &Pool<S
     }
 
 //    if 0 != multiple_articles.len() {
-        Ok(article::MultipleArticleResponse::from_articles( multiple_articles ))    
-/*    } else { 
+//    Ok(article::MultipleArticleResponse::from_articles( multiple_articles ))    
+    Ok(multiple_articles)    
+    /*    } else { 
         Err(errors::RegistrationError::NoArticleFound)
     }*/
 }
@@ -112,7 +140,7 @@ pub(crate) async fn update_article(conn: &Pool<Sqlite>,
         .await?;
 
     let updated_slug = filter.updated_slug();
-    get_article(conn, filters::ArticleFilterBySlug { slug: updated_slug })
+    get_one(conn, filters::ArticleFilterBySlug { slug: updated_slug })
         .await
 }
     
@@ -133,7 +161,7 @@ pub(crate) async fn favorite_article<F: crate::filters::ArticleFilter>(conn: &Po
     .execute(conn)
     .await?;        
 
-    get_article(conn, filter).await
+    get_one(conn, filter).await
 }
 
 pub(crate) async fn unfavorite_article<F: filters::ArticleFilter>(conn: &Pool<Sqlite>,
@@ -152,7 +180,7 @@ pub(crate) async fn unfavorite_article<F: filters::ArticleFilter>(conn: &Pool<Sq
     .execute(conn)
     .await?;        
 
-    get_article(conn, filter).await
+    get_one(conn, filter).await
 }
 
 pub(crate) async fn get_comments(conn: &Pool<Sqlite>,

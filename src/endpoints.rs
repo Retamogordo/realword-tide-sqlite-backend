@@ -137,7 +137,7 @@ pub(crate) async fn get_article(req: Request) -> tide::Result {
 //    let filter = ArticleFilterEnum::BySlug(slug);
     let filter = filters::ArticleFilterBySlug { slug };
 
-    let res = match db::article::get_article(req.state(), filter).await {
+    let res = match db::article::get_one(req.state(), filter).await {
         Ok(article) => {
             Ok(json!(ArticleResponseWrapped { article }).into())
         },
@@ -152,7 +152,7 @@ pub(crate) async fn get_articles(req: Request) -> tide::Result {
     let order_by = filters::OrderByFilter::Descending("updatedAt");
     let limit_offset: filters::LimitOffsetFilter = req.query()?;
 
-    let res = match db::article::get_articles(req.state(), filter, order_by, limit_offset).await {
+    let res = match db::article::get_all(req.state(), filter, order_by, limit_offset).await {
         Ok(articles) => {
 //            Ok(json!(ArticleResponseWrapped { article }).into())
             Ok(json!(articles).into())
@@ -215,7 +215,7 @@ pub(crate) async fn feed_articles(req: Request) -> tide::Result {
     let order_by = filters::OrderByFilter::Descending("updatedAt");
     let limit_offset: filters::LimitOffsetFilter = req.query()?;
 
-    let res = match db::article::get_articles(req.state(), filter, order_by, limit_offset).await {
+    let res = match db::article::get_all(req.state(), filter, order_by, limit_offset).await {
         Ok(articles) => {
             Ok(json!(articles).into())
         },
