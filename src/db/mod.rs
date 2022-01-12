@@ -499,4 +499,37 @@ pub(crate) async fn add_comment(conn: &Pool<Sqlite>,
     }
 }
 
+pub(crate) async fn get_tags(conn: &Pool<Sqlite>,
+) -> Result<crate::TagList, crate::errors::RegistrationError>  {
+
+    let statement = format!("SELECT tagList FROM articles");
+
+    let all_tags: Vec<String> = sqlx::query_scalar(
+        &statement
+    )
+    .fetch_all(conn)  
+    .await?;
+
+    let mut all_tags_hash_set 
+        = std::collections::HashSet::<&str>::with_capacity(200*all_tags.len());
+
+    for tags_delimited in &all_tags {
+        let tag_hash_set = 
+            tags_delimited.split(",")
+                .map(|tag| tag.trim())
+                .filter(|tag| *tag != "")
+                .collect::<std::collections::HashSet<&str>>();
+
+        all_tags_hash_set.extend(tag_hash_set);    
+    }
+
+    let mut tags: Vec<String> = all_tags_hash_set
+        .into_iter()
+        .map(|tag| tag.to_string() )
+        .collect();
+
+    tags.sort_by_key(|tag| tag.to_lowercase());
+
+    Ok(crate::TagList {tags})
+}
 

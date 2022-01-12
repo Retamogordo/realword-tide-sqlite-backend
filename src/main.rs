@@ -231,9 +231,9 @@ where
 
     tag_list.as_ref().and_then(|tags| {
         let mut tag_vec = tags.split(",")
+            .map(|tag| tag.trim())
             .filter(|tag| *tag != "")
-            .map(|tag| tag.to_string())
-            .collect::<Vec<String>>();
+            .collect::<Vec<&str>>();
             
         tag_vec.sort_by_key(|tag| tag.to_lowercase());
         Some(tag_vec)
@@ -247,37 +247,6 @@ where
         dt.checked_add_signed(chrono::Duration::milliseconds(42))
         .serialize(serializer)
 }
-/*
-use serde::ser::SerializeStruct;
-impl Serialize for Article {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        // 3 is the number of fields in the struct.
-        let mut state = serializer.serialize_struct("Article", 9)?;
-        state.serialize_field("slug", &self.slug)?;
-        state.serialize_field("title", &self.title)?;
-        state.serialize_field("description", &self.description)?;
-        state.serialize_field("body", &self.body)?;
-        state.serialize_field("tagList", 
-            &self.tag_list.as_ref().and_then(|tags| 
-                Some(tags.split(",")
-                    .filter(|tag| *tag != "")
-                    .map(|tag| tag.to_string())
-                    .collect::<Vec<String>>()))
-        )?;
-        // quick and dirty - needed to add some dummy millis to fit to conduit deser format
-        state.serialize_field("createdAt", &self.created_at.checked_add_signed(chrono::Duration::milliseconds(42)))?;
-        state.serialize_field("updatedAt", &self.updated_at.checked_add_signed(chrono::Duration::milliseconds(42)))?;
-        state.serialize_field("favorited", &self.favorited)?;
-        state.serialize_field("favoritesCount", &self.favorites_count)?;
-        state.end()
-    }
-}
-*/
-//#[derive(Debug, Serialize, Deserialize, Clone)]
-//pub(crate) struct AuthorWrapped(Option<Profile>)
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct ArticleResponse {
@@ -313,6 +282,12 @@ impl MultipleArticleResponse {
             articles_count
         }
     }
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TagList {
+    pub tags: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -360,6 +335,7 @@ async fn main() -> tide::Result<()> {
     app.at("/api/articles/:slug/favorite").delete(unfavorite_article);
     app.at("/api/articles/:slug/comments").post(add_comment);
     app.at("/api/articles/:slug/comments").get(get_comments);
+    app.at("/api/tags").get(get_tags);
  
     app.listen("127.0.0.1:3000").await?;
 }
@@ -876,27 +852,38 @@ async fn add_comment(mut req: Request) -> tide::Result {
 }
 
 async fn get_comments(req: Request) -> tide::Result {
-        let mut filter = CommentFilterByValues { 
-            article_slug: Some(req.param("slug")?),
-            author: None
-        };
+    let mut filter = CommentFilterByValues { 
+        article_slug: Some(req.param("slug")?),
+        author: None
+    };
 
-        let tmp = auth::Auth::authorize(&req).ok().and_then(|(claims, _)| Some(claims.username));
-        filter.author = tmp.as_deref();
+    let tmp = auth::Auth::authorize(&req).ok().and_then(|(claims, _)| Some(claims.username));
+    filter.author = tmp.as_deref();
 
 /*        if let Ok((claims, _)) = auth::Auth::authorize(&req) {
-            filter.author = Some(&claims.username);
-        }*/
-        let order_by = OrderByFilter::Descending("id");
-        let limit_offset: LimitOffsetFilter = LimitOffsetFilter::default();
-    
-        let res = match db::get_comments(req.state(), filter, order_by, limit_offset).await {
-            Ok(comments) => {
-    //            Ok(json!(ArticleResponseWrapped::from_article(article)).into())
-                Ok(json!(comments).into())
-            },
-            Err(err) => err.into(),
-        };
-        res
-    }
-    
+        filter.author = Some(&claims.username);
+    }*/
+    let order_by = OrderByFilter::Descending("id");
+    let limit_offset: LimitOffsetFilter = LimitOffsetFilter::default();
+
+    let res = match db::get_comments(req.state(), filter, order_by, limit_offset).await {
+        Ok(comments) => {
+//            Ok(json!(ArticleResponseWrapped::from_article(article)).into())
+            Ok(json!(comments).into())
+        },
+        Err(err) => err.into(),
+    };
+    res
+}
+
+async fn get_tags(req: Request) -> tide::Result {
+
+    let res = match db::get_tags(req.state()).await {
+        Ok(tags) => {
+//            Ok(json!(ArticleResponseWrapped::from_article(article)).into())
+            Ok(json!(tags).into())
+        },
+        Err(err) => err.into(),
+    };
+    res
+}
