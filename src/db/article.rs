@@ -1,5 +1,5 @@
-use sqlx::{SqliteConnection, Pool};
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions, Sqlite};
+use sqlx::{Pool};
+use sqlx::sqlite::{Sqlite, SqliteQueryResult};
 use crate::{models::article, filters, errors};
 
 pub(crate) async fn create_article(conn: &Pool<Sqlite>,
@@ -92,11 +92,12 @@ pub(crate) async fn get_all<F: crate::filters::ArticleFilter>(conn: &Pool<Sqlite
     filter: F,
     order_by: crate::filters::OrderByFilter<'_>,
     limit_offset: crate::filters::LimitOffsetFilter
-) -> Result<article::MultipleArticleResponse, errors::RegistrationError>  {
+//) -> Result<article::MultipleArticleResponse, errors::RegistrationError>  {
+) -> Result<Vec<article::ArticleResponse>, errors::RegistrationError>  {
 
-    Ok(article::MultipleArticleResponse::from_articles( 
+    Ok(//article::MultipleArticleResponse::from_articles( 
         get_articles(conn, filter, order_by, limit_offset).await?)
-    )    
+   // )    
 }
 
 async fn get_articles<F: crate::filters::ArticleFilter>(conn: &Pool<Sqlite>,
@@ -131,19 +132,37 @@ async fn get_articles<F: crate::filters::ArticleFilter>(conn: &Pool<Sqlite>,
 }
 
 pub(crate) async fn update_article(conn: &Pool<Sqlite>,
+        update_article: crate::models::article::UpdateArticle,
         filter: crate::filters::UpdateArticleFilter<'_>
 ) -> Result<article::ArticleResponse, errors::RegistrationError>  {
 
-    let statement = format!("UPDATE articles SET {}", filter);
-    sqlx::query(&statement)
+    let statement = format!("UPDATE articles SET {} WHERE {}", update_article, filter);
+    let query_res = sqlx::query(&statement)
         .execute(conn)    
         .await?;
+    if 0 < query_res.rows_affected() {    
+        let updated_slug = if let Some(slug) = update_article.updated_slug() {
+            slug
+        } else { filter.slug };
 
-    let updated_slug = filter.updated_slug();
-    get_one(conn, filters::ArticleFilterBySlug { slug: updated_slug })
-        .await
+        get_one(conn, filters::ArticleFilterBySlug { slug: updated_slug })
+            .await
+    } else {
+        Err(errors::RegistrationError::NoArticleFound)
+    }
 }
     
+pub(crate) async fn delete_article(conn: &Pool<Sqlite>,
+    filter: crate::filters::UpdateArticleFilter<'_>
+) -> Result<SqliteQueryResult, sqlx::Error> {
+
+    let statement = format!("DELETE FROM articles WHERE {}", filter);
+    
+    sqlx::query(&statement)
+        .execute(conn)    
+        .await
+}
+
 pub(crate) async fn favorite_article<F: crate::filters::ArticleFilter>(conn: &Pool<Sqlite>,
     filter: F,
     username: &str,

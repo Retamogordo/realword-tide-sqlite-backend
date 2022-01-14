@@ -1,5 +1,4 @@
 use tide::prelude::*;
-use std::error::Error;
 use std::fmt::Display;
 
 const DB_UNIQUE_CONSTRAINT_VIOLATION: &str = "1555";

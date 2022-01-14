@@ -1,5 +1,4 @@
-use sqlx::{Pool};
-use sqlx::sqlite::{Sqlite, SqlitePool};
+use sqlx::sqlite::{SqlitePool};
 
 pub(crate) async fn create (sqlite_pool: &SqlitePool) -> Result<(), sqlx::Error> {
     sqlx::query("

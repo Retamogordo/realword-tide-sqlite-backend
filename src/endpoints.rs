@@ -1,15 +1,12 @@
-use tide::{Response, Next, Result, StatusCode};
 use tide::prelude::*;
 
-use sqlx::prelude::*;
-use sqlx::sqlite::{SqlitePool};
-
 use validator::{Validate};
-use async_std::fs::File;
-use async_std::io::ReadExt;
+//use async_std::fs::File;
+//use async_std::io::ReadExt;
+use crate::app::AppState;
 use crate::{models::{user::*, article::*}, errors::*, db, auth, filters};
 
-pub(crate) type Request = tide::Request<SqlitePool>;
+pub(crate) type Request = tide::Request<AppState>;
 
 pub(crate) async fn register(mut req: Request) -> tide::Result {
     let wrapped: UserRegWrapped = req.body_json().await?;
@@ -19,11 +16,12 @@ pub(crate) async fn register(mut req: Request) -> tide::Result {
         Err(err) => return FromValidatorError::from(err).into(),
     };
 
-    let res = match db::user::register_user(req.state(), &wrapped.user).await {
+    let res = match db::user::register_user(&req.state().conn, &wrapped.user).await {
         Ok(()) => {
-            let mut user = wrapped.user.into();
-            auth::Auth::create_token(&mut user)?;
-            Ok(json!(UserWrapped { user }).into())
+            let mut user: User = wrapped.user.into();
+//            auth::Auth::create_token(&mut user)?;
+            user.token = Some(auth::Auth::create_token(&user, &req.state().secret)?);
+            Ok(json!(user.wrap()).into())
         },
         Err(err) => err.into(),
     };
@@ -33,11 +31,11 @@ pub(crate) async fn register(mut req: Request) -> tide::Result {
 pub(crate) async fn login(mut req: Request) -> tide::Result {
     println!("in login");
     let login_req: LoginRequestWrapped = req.body_json().await?;
-    let res = match db::user::get_user_by_email(req.state(), &login_req.user.email).await {
+    let res = match db::user::get_user_by_email(&req.state().conn, &login_req.user.email).await {
         Ok(user) => {
             let mut user: User = user.into();
-            auth::Auth::create_token(&mut user)?;
-            Ok(json!(UserWrapped {user}).into())
+            user.token = Some(auth::Auth::create_token(&user, &req.state().secret)?);
+            Ok(json!(user.wrap()).into())
         },
         Err(err) => err.into(),
     };
@@ -46,13 +44,13 @@ pub(crate) async fn login(mut req: Request) -> tide::Result {
 
 pub(crate) async fn current_user(req: Request) -> tide::Result {
 
-    let (claims, token) = auth::Auth::authorize(&req)?;
+    let (claims, token) = auth::Auth::authenticate(&req)?;
 
-    let res = match db::user::get_user_by_username(req.state(), &claims.username).await {
+    let res = match db::user::get_user_by_username(&req.state().conn, &claims.username).await {
         Ok(user) => {
             let mut user: User = user.into();
             user.token = Some(token);
-            Ok(json!(UserWrapped{ user }).into())
+            Ok(json!(user.wrap()).into())
         },
         Err(err) => err.into(),
     };
@@ -62,9 +60,9 @@ pub(crate) async fn current_user(req: Request) -> tide::Result {
 pub(crate) async fn profile(req: Request) -> tide::Result {
     let username = req.param("username")?;
 
-    let res = match db::user::get_profile(req.state(), &username).await {
+    let res = match db::user::get_profile(&req.state().conn, &username).await {
         Some(profile) => {
-            Ok(json!(ProfileWrapped {profile}).into())
+            Ok(json!(profile.wrap()).into())
         },
         None => 
         crate::errors::RegistrationError::NoUserFound(username.to_string()).into()
@@ -74,16 +72,16 @@ pub(crate) async fn profile(req: Request) -> tide::Result {
 
 
 pub(crate) async fn update_user(mut req: Request) -> tide::Result {
-    let (claims, token) = auth::Auth::authorize(&req)?;
+    let (claims, token) = auth::Auth::authenticate(&req)?;
 
     let update_user: UserUpdateWrapped = req.body_json().await?;
 
-    db::user::update_user(req.state(), &claims.username, &update_user.user)
+    db::user::update_user(&req.state().conn, &claims.username, &update_user.user)
         .await
         .and_then(|user| {
             let mut user: User = user.into();
             user.token = Some(token);
-            Ok(json!(UserWrapped{ user }).into())
+            Ok(json!(user.wrap()).into())
         })
         .or_else(|err| err.into())
 }
@@ -91,141 +89,185 @@ pub(crate) async fn update_user(mut req: Request) -> tide::Result {
 pub(crate) async fn follow(req: Request) -> tide::Result {
     let celeb_name = req.param("username")?;
 
-    let (claims, token) = auth::Auth::authorize(&req)?;
+    let (claims, _) = auth::Auth::authenticate(&req)?;
 
-    let res = match db::user::follow(req.state(), &claims.username, &celeb_name).await {
-        Ok(profile) => {
+    db::user::follow(&req.state().conn, &claims.username, &celeb_name)
+        .await
+        .and_then(|profile| {
             let profile: Profile = profile.into();
-            Ok(json!(ProfileWrapped{ profile }).into())
-        },
-        Err(err) => err.into(),
-    };
-    res
+            Ok(json!(profile.wrap()).into())
+        })
+        .or_else(|err| err.into())
 }
 
 pub(crate) async fn unfollow(req: Request) -> tide::Result {
     let celeb_name = req.param("username")?;
 
-    let (claims, token) = auth::Auth::authorize(&req)?;
+    let (claims, token) = auth::Auth::authenticate(&req)?;
 
-    let res = match db::user::unfollow(req.state(), &claims.username, &celeb_name).await {
-        Ok(profile) => {
-            let profile: Profile = profile.into();
-            Ok(json!(ProfileWrapped{ profile }).into())
-        },
-        Err(err) => err.into(),
-    };
-    res
+    db::user::unfollow(&req.state().conn, &claims.username, &celeb_name)
+        .await 
+        .and_then(|profile| {
+            //let profile: Profile = profile.into();
+            Ok(json!(profile.wrap()).into())
+        })
+        .or_else(|err| err.into())
 }
 
 pub(crate) async fn create_article(mut req: Request) -> tide::Result {
-    let (claims, token) = auth::Auth::authorize(&req)?;
+    let (claims, _) = auth::Auth::authenticate(&req)?;
 
     let article_req: CreateArticleRequestWrapped = req.body_json().await?;
 
-    let res: tide::Result = match db::article::create_article(req.state(), &claims.username, &article_req.article).await {
-        Ok(article) => {
-            Ok(json!(ArticleResponseWrapped { article }).into())
-        },
-        Err(err) => err.into(),
-    };
-    res
+    db::article::create_article(&req.state().conn, &claims.username, &article_req.article)
+        .await
+        .and_then(|article_response| 
+            Ok(json!(article_response.wrap()).into())
+        )
+        .or_else(|err| err.into())
 }
 
 pub(crate) async fn get_article(req: Request) -> tide::Result {
     let slug = req.param("slug")?;
-//    let filter = ArticleFilterEnum::BySlug(slug);
     let filter = filters::ArticleFilterBySlug { slug };
 
-    let res = match db::article::get_one(req.state(), filter).await {
-        Ok(article) => {
-            Ok(json!(ArticleResponseWrapped { article }).into())
-        },
-        Err(err) => err.into(),
-    };
-    res
+    db::article::get_one(&req.state().conn, filter)
+        .await 
+        .and_then(|article_response| 
+            Ok(json!(article_response.wrap()).into())
+        )
+        .or_else(|err| err.into())
 }
 
 pub(crate) async fn get_articles(req: Request) -> tide::Result {
-//    let filter = ArticleFilterEnum::ByRest(req.query()?);
     let filter: filters::ArticleFilterByValues = req.query()?;
     let order_by = filters::OrderByFilter::Descending("updatedAt");
     let limit_offset: filters::LimitOffsetFilter = req.query()?;
 
-    let res = match db::article::get_all(req.state(), filter, order_by, limit_offset).await {
-        Ok(articles) => {
-//            Ok(json!(ArticleResponseWrapped { article }).into())
-            Ok(json!(articles).into())
-        },
-        Err(err) => err.into(),
-    };
-    res
+    db::article::get_all(&req.state().conn, filter, order_by, limit_offset)
+        .await 
+        .and_then(|articles|
+            Ok(json!(MultipleArticleResponse::from_articles(articles)).into())
+        )
+        .or_else(|err| err.into())
 }
 
 pub(crate) async fn update_article(mut req: Request) -> tide::Result {
-    let (claims, _) = auth::Auth::authorize(&req)?;
+    let (claims, _) = auth::Auth::authenticate(&req)?;
 
-    let mut filter: filters::UpdateArticleFilter = req.body_json().await?;
-    filter.slug = req.param("slug")?;
-    filter.author = &claims.username;
+    let update_article: UpdateArticleRequest = req.body_json().await?;
+    let slug = req.param("slug")?;
+    let filter = filters::UpdateArticleFilter { 
+        slug,
+        author: &claims.username
+    };
 
-    let res = match db::article::update_article(req.state(), filter).await {
-        Ok(article) => {
-            Ok(json!(ArticleResponseWrapped { article }).into())
+    let res = match db::article::update_article(&req.state().conn, 
+                                                update_article.article, 
+                                                filter).await {
+        Ok(article_response) => {
+            Ok(json!(article_response.wrap()).into())
         },
-        Err(err) => err.into(),
+        Err(err) => match err {
+            // successful update returns the updated article, otherwise
+            // NoArticleFound error is returned
+            // if optimistic update fails, try to verify if this happened
+            // because user is not authorized to do so
+            crate::errors::RegistrationError::NoArticleFound => {
+                let filter = filters::ArticleFilterBySlug { slug };
+                if let Ok(article_response) = db::article::get_one(&req.state().conn, filter).await {
+
+                    auth::Auth::authorize(&req, &article_response.article.author)
+                        .and(
+                            Err(tide::Error::from_str(
+                                tide::StatusCode::InternalServerError, "could not update article despite user has been authorized, probably due to a bug"))
+                        )
+
+                } else {
+                    crate::errors::RegistrationError::NoArticleFound.into()
+                }
+            },
+            err @ _ =>  err.into(),
+        }
     };
     res
 }
 
+pub(crate) async fn delete_article(mut req: Request) -> tide::Result {
+    let (claims, _) = auth::Auth::authenticate(&req)?;
+
+    let slug = req.param("slug")?;
+    let filter = filters::UpdateArticleFilter { 
+        slug,
+        author: &claims.username
+    };
+
+    let query_res = db::article::delete_article(&req.state().conn, filter).await?;
+
+    if 0 == query_res.rows_affected() {
+        let filter = filters::ArticleFilterBySlug { slug };
+        if let Ok(article_response) = db::article::get_one(&req.state().conn, filter).await {
+
+            auth::Auth::authorize(&req, &article_response.article.author)
+                .and(
+                    Err(tide::Error::from_str(
+                        tide::StatusCode::InternalServerError, "could not delete article despite user has been authorized, probably due to a bug"))
+                )
+
+        } else {
+            crate::errors::RegistrationError::NoArticleFound.into()
+        }
+    } else {
+        Ok(json!(()).into())
+    }
+}
+
+
 pub(crate) async fn favorite_article(req: Request) -> tide::Result {
-    let (claims, _) = auth::Auth::authorize(&req)?;
+    let (claims, _) = auth::Auth::authenticate(&req)?;
 
     let slug = req.param("slug")?;
     let filter = filters::ArticleFilterBySlug { slug };
 
-    let res = match db::article::favorite_article(req.state(), filter, &claims.username).await {
-        Ok(article) => {
-            Ok(json!(ArticleResponseWrapped { article }).into())
-        },
-        Err(err) => err.into(),
-    };
-    res
+    db::article::favorite_article(&req.state().conn, filter, &claims.username)
+        .await 
+        .and_then(|article_response| 
+            Ok(json!(article_response.wrap()).into())
+        )
+        .or_else(|err| err.into())
 }
 
 pub(crate) async fn unfavorite_article(req: Request) -> tide::Result {
-    let (claims, _) =  auth::Auth::authorize(&req)?;
+    let (claims, _) =  auth::Auth::authenticate(&req)?;
 
     let slug = req.param("slug")?;
     let filter = filters::ArticleFilterBySlug { slug };
 
-    let res = match db::article::unfavorite_article(req.state(), filter, &claims.username).await {
-        Ok(article) => {
-            Ok(json!(ArticleResponseWrapped { article }).into())
-        },
-        Err(err) => err.into(),
-    };
-    res
+    db::article::unfavorite_article(&req.state().conn, filter, &claims.username)
+        .await 
+        .and_then(|article_response| 
+            Ok(json!(article_response.wrap()).into())
+        )
+        .or_else(|err| err.into())
 }
 
 pub(crate) async fn feed_articles(req: Request) -> tide::Result {
-    let (claims, _) = auth::Auth::authorize(&req)?;
+    let (claims, _) = auth::Auth::authenticate(&req)?;
 
     let filter = filters::ArticleFilterFeed { follower: &claims.username };
     let order_by = filters::OrderByFilter::Descending("updatedAt");
     let limit_offset: filters::LimitOffsetFilter = req.query()?;
 
-    let res = match db::article::get_all(req.state(), filter, order_by, limit_offset).await {
-        Ok(articles) => {
-            Ok(json!(articles).into())
-        },
-        Err(err) => err.into(),
-    };
-    res
+    db::article::get_all(&req.state().conn, filter, order_by, limit_offset)
+        .await 
+        .and_then(|articles|
+            Ok(json!(MultipleArticleResponse::from_articles(articles)).into())
+        )
+        .or_else(|err| err.into())
 }
 
 pub(crate) async fn add_comment(mut req: Request) -> tide::Result {
-    let (claims, _) = auth::Auth::authorize(&req)?;
+    let (claims, _) = auth::Auth::authenticate(&req)?;
 
     let wrapped: AddCommentRequestWrapped = req.body_json().await?;
     let slug = req.param("slug")?;
@@ -233,14 +275,12 @@ pub(crate) async fn add_comment(mut req: Request) -> tide::Result {
 
     let filter = filters::ArticleFilterBySlug { slug };
 
-    let res = match db::article::add_comment(req.state(), filter, author, &wrapped.comment).await {
-        Ok(comment) => {
-          Ok(json!(CommentResponseWrapped {comment}).into())
-//          Ok(json!("").into())
-        },
-        Err(err) => err.into(),
-    };
-    res
+    db::article::add_comment(&req.state().conn, filter, author, &wrapped.comment)
+        .await 
+        .and_then(|comment|
+          Ok(json!(comment.wrap()).into())
+        )
+        .or_else(|err| err.into())
 }
 
 pub(crate) async fn get_comments(req: Request) -> tide::Result {
@@ -249,33 +289,27 @@ pub(crate) async fn get_comments(req: Request) -> tide::Result {
         author: None
     };
 
-    let tmp = auth::Auth::authorize(&req).ok().and_then(|(claims, _)| Some(claims.username));
+    let tmp = auth::Auth::authenticate(&req).ok().and_then(|(claims, _)| Some(claims.username));
+    // author is an Option, can be None
     filter.author = tmp.as_deref();
 
-/*        if let Ok((claims, _)) = auth::Auth::authorize(&req) {
-        filter.author = Some(&claims.username);
-    }*/
     let order_by = filters::OrderByFilter::Descending("id");
     let limit_offset: filters::LimitOffsetFilter = filters::LimitOffsetFilter::default();
 
-    let res = match db::article::get_comments(req.state(), filter, order_by, limit_offset).await {
-        Ok(comments) => {
-//            Ok(json!(ArticleResponseWrapped { article }).into())
-            Ok(json!(comments).into())
-        },
-        Err(err) => err.into(),
-    };
-    res
+    db::article::get_comments(&req.state().conn, filter, order_by, limit_offset)
+        .await 
+        .and_then(|comments|
+          Ok(json!(comments).into())
+        )
+        .or_else(|err| err.into())
 }
 
 pub(crate) async fn get_tags(req: Request) -> tide::Result {
 
-    let res = match db::article::get_tags(req.state()).await {
-        Ok(tags) => {
-//            Ok(json!(ArticleResponseWrapped { article }).into())
+    db::article::get_tags(&req.state().conn)
+        .await 
+        .and_then(|tags|
             Ok(json!(tags).into())
-        },
-        Err(err) => err.into(),
-    };
-    res
+        )
+        .or_else(|err| err.into())
 }

@@ -1,6 +1,6 @@
-use sqlx::{SqliteConnection, Pool};
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions, Sqlite};
-use crate::models::{user, article};
+use sqlx::{Pool};
+use sqlx::sqlite::{Sqlite};
+use crate::models::{user};
 
 pub(crate) async fn register_user(conn: &Pool<Sqlite>,
     user: &user::UserReg,

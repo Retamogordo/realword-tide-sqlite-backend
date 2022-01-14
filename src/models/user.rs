@@ -52,17 +52,16 @@ impl From<UserReg> for User {
     }
 }
 
+impl User {
+    pub fn wrap(self) -> UserWrapped {
+        UserWrapped { user: self }
+    }
+}
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct UserWrapped {
     pub user: User,
 }
-/*
-impl UserWrapped {
-    fn from_user(user: User) -> Self {
-        Self { user }
-    }
-}
-*/
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[derive(sqlx::FromRow)]
 pub(crate) struct Profile {
@@ -70,6 +69,12 @@ pub(crate) struct Profile {
     bio: String,    
     image: Option<String>,  
     following: bool,
+}
+
+impl Profile {
+    pub fn wrap(self) -> ProfileWrapped {
+        ProfileWrapped { profile: self }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -88,6 +93,7 @@ pub(crate) struct LoginRequest {
     pub email: String,
     pub password: String,
 }
+
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct LoginRequestWrapped {
 //    user: String,

@@ -20,7 +20,15 @@ impl std::fmt::Display for ArticleFilterBySlug<'_> {
         write!( f, " {}='{}'", "slug", self.slug)
     }
 }
-
+/*
+#[derive(Deserialize)]
+#[serde(default)]
+pub(crate) struct ArticleFilterByValues {
+    pub author: Option<String>,
+    pub tag: Option<String>,
+    pub favorited: Option<String>,
+}
+*/
 #[derive(Deserialize)]
 #[serde(default)]
 pub(crate) struct ArticleFilterByValues {
@@ -71,6 +79,66 @@ impl std::fmt::Display for ArticleFilterFeed<'_> {
     }
 }
 
+pub(crate) struct UpdateArticleFilter<'a> {
+    pub slug: &'a str,
+    pub author: &'a str,
+}
+impl ArticleFilter for UpdateArticleFilter<'_> {}
+
+impl std::fmt::Display for UpdateArticleFilter<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!( f, " slug='{}' AND author='{}'", self.slug, self.author)
+    }
+}
+/*
+#[derive(Debug, Deserialize, Clone)]
+//#[serde(default)]
+pub(crate) struct UpdateArticleFilter_old<'a> {
+    #[serde(skip_deserializing)]
+    pub slug: &'a str,
+    #[serde(skip_deserializing)]
+    pub author: &'a str,
+    #[serde(deserialize_with = "slugify_article_on_update")]    
+    article: crate::models::article::UpdateArticleRequest,
+}
+
+impl UpdateArticleFilter_old<'_> {
+    pub fn updated_slug(&self) -> &str {
+        if let Some(ref slug) = self.article.slug_from_title {
+            slug
+        } else { 
+            self.slug
+        }
+    }
+}
+*/
+
+/*
+impl Default for UpdateArticleFilter_old<'_> {
+    fn default() -> Self {
+        Self { 
+            slug: "",
+            title: None,
+            description: None,
+            body: None, 
+        }
+    }
+}
+*/
+/*
+impl std::fmt::Display for UpdateArticleFilter_old<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use slugify::slugify;
+
+        self.article.title.as_ref().map(|val| 
+            write!( f, " {}='{}' , {}='{}'", "title", val, "slug", slugify!(val)) ).unwrap_or(Ok(()))?;
+        self.article.description.as_ref().map(|val| write!( f, " {}='{}' ,", "description", val) ).unwrap_or(Ok(()))?;
+        self.article.body.as_ref().map(|val| write!( f, " {}='{}' ,", "body", val) ).unwrap_or(Ok(()))?;
+        write!( f, " id=id ")?;
+        write!( f, " WHERE slug='{}' AND author='{}'", self.slug, self.author)
+    }
+}
+*/
 pub(crate) enum OrderByFilter<'a> {
     Ascending(&'a str),
     Descending(&'a str),
@@ -144,58 +212,3 @@ impl std::fmt::Display for LimitOffsetFilter {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
-//#[serde(default)]
-pub(crate) struct UpdateArticleFilter<'a> {
-    #[serde(skip_deserializing)]
-    pub slug: &'a str,
-    #[serde(skip_deserializing)]
-    pub author: &'a str,
-    #[serde(deserialize_with = "slugify_article_on_update")]    
-    article: crate::models::article::UpdateArticleRequest,
-}
-
-impl UpdateArticleFilter<'_> {
-    pub fn updated_slug(&self) -> &str {
-        if let Some(ref slug) = self.article.slug_from_title {
-            slug
-        } else { 
-            self.slug
-        }
-    }
-}
-
-fn slugify_article_on_update<'de, D>(deserializer: D) 
-    -> std::result::Result<crate::models::article::UpdateArticleRequest, D::Error>
-where
-    D: serde::Deserializer<'de>, {
-    use slugify::slugify;
-    let mut req: crate::models::article::UpdateArticleRequest = serde::Deserialize::deserialize(deserializer)?;
-    req.slug_from_title = req.title.as_ref().and_then(|title| Some(slugify!(title)));
-    Ok(req)
-}
-
-/*
-impl Default for UpdateArticleFilter<'_> {
-    fn default() -> Self {
-        Self { 
-            slug: "",
-            title: None,
-            description: None,
-            body: None, 
-        }
-    }
-}
-*/
-impl std::fmt::Display for UpdateArticleFilter<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use slugify::slugify;
-
-        self.article.title.as_ref().map(|val| 
-            write!( f, " {}='{}' , {}='{}'", "title", val, "slug", slugify!(val)) ).unwrap_or(Ok(()))?;
-        self.article.description.as_ref().map(|val| write!( f, " {}='{}' ,", "description", val) ).unwrap_or(Ok(()))?;
-        self.article.body.as_ref().map(|val| write!( f, " {}='{}' ,", "body", val) ).unwrap_or(Ok(()))?;
-        write!( f, " id=id ")?;
-        write!( f, " WHERE slug='{}' AND author='{}'", self.slug, self.author)
-    }
-}

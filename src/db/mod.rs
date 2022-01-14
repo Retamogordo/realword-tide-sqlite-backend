@@ -1,8 +1,7 @@
-use sqlx::Connection;
+//use sqlx::Connection;
 use sqlx::{Pool};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions, Sqlite};
 use std::str::FromStr;
-use sqlx::Row;
 
 pub(crate) mod article;
 pub(crate) mod user;
@@ -18,11 +17,14 @@ pub async fn connect(database_url_prefix: &str, database_url_path: &str,
         err @ _ => err, 
     }?;
 
-    let database_url = format!("{}{}", database_url_prefix, database_url_path);
-
+    let database_url = format!("{}{}{}", database_url_prefix, database_url_path, database_file);
+    
+/*    if !sqlx::Sqlite::database_exists(&database_url).await? {
+        sqlx::Sqlite::create_database(&database_url).await?;
+    }*/
     let connection_options = SqliteConnectOptions::from_str(&database_url)?
         .create_if_missing(true)
-        .filename(database_file);
+        .filename(database_url);
 //        .journal_mode(SqliteJournalMode::Wal)
 //        .synchronous(SqliteSynchronous::Normal)
 //        .busy_timeout(pool_timeout);

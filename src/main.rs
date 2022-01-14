@@ -5,74 +5,23 @@ mod filters;
 mod models;
 mod utils;
 mod endpoints;
+mod app;
 
-use tide::{Response, Next, Result, StatusCode};
-use tide::prelude::*;
-
-use sqlx::prelude::*;
-use sqlx::sqlite::{SqlitePool};
-
-//use std::future::Future;
-//use std::pin::Pin;
-use validator::{Validate};
 use async_std::fs::File;
 use async_std::io::ReadExt;
 use crate::endpoints::*;
-//use once_cell::sync::OnceCell;
-//use async_trait::async_trait;
+use once_cell::sync::OnceCell;
 
-
-#[derive(Clone)]
-struct MyState {
-    name: String,
-}
-
-struct MyMiddle {
-//    conn: &'static sqlx::Pool<sqlx::Sqlite>,
-}
+static APP: OnceCell<app::App> = OnceCell::new();
 
 #[async_std::main]
 async fn main() -> tide::Result<()> {
-    dotenv::dotenv().ok();
+    let cfg = app::Config::from_env();
+    let app = app::App::from_config(cfg);
+
+    APP.set(app).expect("Cannot create application instance.");
     
-    let database_url_prefix =
-        std::env::var("DATABASE_URL_PREFIX").expect("No DATABASE_URL_PREFIX environment variable found");
-    let database_url_path =
-        std::env::var("DATABASE_URL_PATH").expect("No DATABASE_URL_PATH environment variable found");
-    let database_file =
-        std::env::var("DATABASE_FILE").expect("No DATABASE_FILE environment variable found");
-
-    let conn_db = crate::db::connect(&database_url_prefix, &database_url_path, &database_file).await?;
-{
-//    let mut app = tide::with_state(conn_db);
-    let mut app = tide::with_state(conn_db);
-//    let mut app = tide::new();
-//    app.at("/").get(index);
-    app.at("/api/users").post(register);
-//    app.at("/login_register").get(login_register);
-//    app.with(MyMiddle  {}).at("/api/users");
-
-    app.at("/api/users/login").post(login);
-    app.at("/api/user").get(current_user);
-    app.at("/api/user").put(update_user);
-    app.at("/api/profiles/:username").get(profile);
-    app.at("/api/profiles/:username/follow").post(follow);
-    app.at("/api/profiles/:username/follow").delete(unfollow);
-    app.at("/api/articles").post(create_article);
-    app.at("/api/articles/feed").get(feed_articles);
-    app.at("/api/articles").get(get_articles);
-    app.at("/api/articles/:slug").put(update_article);
-    app.at("/api/articles/:slug").get(get_article);
-    app.at("/api/articles/:slug/favorite").post(favorite_article);
-    app.at("/api/articles/:slug/favorite").delete(unfavorite_article);
-    app.at("/api/articles/:slug/comments").post(add_comment);
-    app.at("/api/articles/:slug/comments").get(get_comments);
-    app.at("/api/tags").get(get_tags);
- 
-    app.listen("127.0.0.1:3000").await?;
-}
-
-    Ok(())
+    APP.get().unwrap().run().await
 }
 
 async fn login_register(_req: Request) -> tide::Result {
