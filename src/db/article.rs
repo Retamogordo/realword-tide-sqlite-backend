@@ -27,7 +27,7 @@ pub(crate) async fn create_article(conn: &Pool<Sqlite>,
         .await?;
 
     let article = get_one(conn, 
-        crate::filters::ArticleFilterBySlug { slug: &article.slug },
+        filters::ArticleFilterByValues::default().slug(article.slug.to_string())
     ).await?;
     Ok(article)
 }
@@ -118,7 +118,7 @@ pub(crate) async fn update_article(conn: &Pool<Sqlite>,
             slug
         } else { filter.slug };
 
-        get_one(conn, filters::ArticleFilterBySlug { slug: updated_slug })
+        get_one(conn, filters::ArticleFilterByValues::default().slug(updated_slug.to_string()))
             .await
     } else {
         Err(errors::BackendError::NoArticleFound)
@@ -135,7 +135,24 @@ pub(crate) async fn delete_article(conn: &Pool<Sqlite>,
         .execute(conn)    
         .await
 }
+/*
+pub(crate) async fn get_favorite<F: filters::Filter>(conn: &Pool<Sqlite>,
+    filter: F,
+    username: &str,
+) -> Result<article::ArticleResponse, sqlx::Error>  {
 
+    let statement = format!("\
+        SELECT * FROM favorite_articles WHERE favorite_articles.id= \
+            (SELECT id FROM articles WHERE {}) AND username='{}'\
+        ", filter, username);
+    
+    sqlx::query(
+        &statement
+    )
+    .execute(conn)
+    .await        
+}
+*/
 pub(crate) async fn favorite_article<F: crate::filters::Filter>(conn: &Pool<Sqlite>,
     filter: F,
     username: &str,
@@ -163,15 +180,15 @@ pub(crate) async fn unfavorite_article<F: filters::Filter>(conn: &Pool<Sqlite>,
 
     let statement = format!("\
         DELETE FROM favorite_articles WHERE favorite_articles.id= \
-            (SELECT id FROM articles WHERE {}) \
-        ", filter.to_string());
+            (SELECT id FROM articles WHERE {}) AND username='{}'\
+        ", filter, username);
     
     sqlx::query(
         &statement
     )
     .execute(conn)
-    .await?;        
-
+    .await?;
+    
     get_one(conn, filter).await
 }
 
@@ -199,7 +216,7 @@ pub(crate) async fn get_comments(conn: &Pool<Sqlite>,
 }
     
 pub(crate) async fn add_comment(conn: &Pool<Sqlite>,
-    filter: crate::filters::ArticleFilterBySlug<'_>,
+    filter: filters::ArticleFilterByValues,
     author: &str,
     comment: &article::AddCommentRequest,
 ) -> Result<article::CommentResponse, errors::BackendError>  {
@@ -213,7 +230,11 @@ pub(crate) async fn add_comment(conn: &Pool<Sqlite>,
     .execute(conn)    
     .await?;
 
-    let comment_filter = filters::CommentFilterByValues::default().author(author).article_slug(filter.slug);
+    let mut comment_filter = filters::CommentFilterByValues::default()
+        .author(author);
+    if let Some(slug) = filter.slug.as_ref() {
+        comment_filter = comment_filter.article_slug(slug);
+    }
     let order_by = crate::filters::OrderByFilter::Descending("id");
     let limit_filter = crate::filters::LimitOffsetFilter { limit: Some(1), offset: None };
 

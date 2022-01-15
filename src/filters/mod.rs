@@ -1,6 +1,6 @@
 use tide::prelude::*;
 
-pub(crate) trait Filter: std::fmt::Display {}
+pub(crate) trait Filter: std::fmt::Display + Default {}
 
 #[derive(Deserialize)]
 #[serde(default)]
@@ -72,6 +72,7 @@ impl Default for UpdateUserFilter<'_> {
     }
 }
 
+/*
 #[derive(Deserialize)]
 pub(crate) struct ArticleFilterBySlug<'a> {
     pub slug: &'a str,
@@ -83,13 +84,33 @@ impl std::fmt::Display for ArticleFilterBySlug<'_> {
         write!( f, " {}='{}'", "slug", self.slug)
     }
 }
-
+*/
 #[derive(Deserialize)]
 #[serde(default)]
 pub(crate) struct ArticleFilterByValues {
     pub author: Option<String>,
     pub tag: Option<String>,
     pub favorited: Option<String>,
+    pub slug: Option<String>,
+}
+
+impl ArticleFilterByValues {
+    pub fn author(mut self, author: String) -> Self {
+        self.author = Some(author);
+        self
+    }
+    pub fn slug(mut self, slug: String) -> Self {
+        self.slug = Some(slug);
+        self
+    }
+    pub fn tag(mut self, tag: String) -> Self {
+        self.tag = Some(tag);
+        self
+    }
+    pub fn favorited(mut self, favorited: String) -> Self {
+        self.favorited = Some(favorited);
+        self
+    }
 }
 
 impl Filter for ArticleFilterByValues {}
@@ -100,6 +121,7 @@ impl Default for ArticleFilterByValues {
             author: None,
             tag: None,
             favorited: None,
+            slug: None,
         }
     }
 }
@@ -107,6 +129,7 @@ impl Default for ArticleFilterByValues {
 impl std::fmt::Display for ArticleFilterByValues {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.author.as_ref().map(|val| write!( f, " {}='{}' AND", "author", val) ).unwrap_or(Ok(()))?;
+        self.slug.as_ref().map(|val| write!( f, " {}='{}' AND", "slug", val) ).unwrap_or(Ok(()))?;
         self.tag.as_ref().map(|val| write!( f, " {} LIKE '%{}%' AND", "tagList", val) ).unwrap_or(Ok(()))?;
         self.favorited.as_ref().map(|val| 
             write!( f, " {}='{}' AND", "favorite_articles.username", val) 
@@ -115,7 +138,7 @@ impl std::fmt::Display for ArticleFilterByValues {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 #[serde(default)]
 pub(crate) struct ArticleFilterFeed<'a> {
     pub follower: &'a str,
@@ -131,6 +154,8 @@ impl std::fmt::Display for ArticleFilterFeed<'_> {
     }
 }
 
+
+#[derive(Default)]
 pub(crate) struct UpdateArticleFilter<'a> {
     pub slug: &'a str,
     pub author: &'a str,

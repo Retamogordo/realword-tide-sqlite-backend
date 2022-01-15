@@ -4,10 +4,11 @@ use crate::endpoints::*;
 
 #[derive(Debug)]
 pub(crate) struct Config {
-    database_url_prefix: String,
-    database_url_path: String,
-    database_file: String,
-    secret: String,
+    pub database_url_prefix: String,
+    pub database_url_path: String,
+    pub database_file: String,
+    pub secret: String,
+    pub drop_database: bool,
 }
 
 impl Config {
@@ -19,6 +20,10 @@ impl Config {
             database_url_path: std::env::var("DATABASE_URL_PATH").expect("No DATABASE_URL_PATH environment variable found"),
             database_file: std::env::var("DATABASE_FILE").expect("No DATABASE_FILE environment variable found"),
             secret: std::env::var("SECRET").expect("No SECRET environment variable found"),
+            drop_database: 0 != std::env::var("DROP_DATABASE")
+                .ok()
+                .and_then(|s| s.parse::<u32>().ok() )
+                .unwrap_or(0) 
         }
     }
 }
@@ -40,10 +45,7 @@ impl App {
     }
 
     pub async fn run(&'static self) -> tide::Result<()> {
-        let conn = crate::db::connect(
-            &self.config.database_url_prefix, 
-            &self.config.database_url_path, 
-            &self.config.database_file)
+        let conn = crate::db::connect(&self.config)
         .await
         .expect("failed to connect to sqlite database. ");
 

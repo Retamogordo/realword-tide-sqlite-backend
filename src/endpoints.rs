@@ -49,15 +49,14 @@ pub(crate) async fn current_user(req: Request) -> tide::Result {
     let (claims, token) = auth::Auth::authenticate(&req)?;
     let filter = filters::UserFilter::default().username(&claims.username);
     
-    let res = match db::user::get_user(&req.state().conn, filter).await {
-        Ok(user) => {
-            let mut user: User = user.into();
-            user.token = Some(token);
-            Ok(json!(user.wrap()).into())
-        },
-        Err(err) => err.into(),
-    };
-    res
+    db::user::get_user(&req.state().conn, filter)
+        .await
+        .and_then(|user| {
+                let mut user: User = user.into();
+                user.token = Some(token);
+                Ok(json!(user.wrap()).into())
+        })
+        .or_else(|err| err.into())
 }
               
 pub(crate) async fn profile(req: Request) -> tide::Result {
@@ -68,7 +67,7 @@ pub(crate) async fn profile(req: Request) -> tide::Result {
             Ok(json!(profile.wrap()).into())
         },
         None => 
-        crate::errors::BackendError::NoUserFound(username.to_string()).into()
+            crate::errors::BackendError::NoUserFound(username.to_string()).into()
     };
     res          
 }
@@ -106,7 +105,7 @@ pub(crate) async fn follow(req: Request) -> tide::Result {
 pub(crate) async fn unfollow(req: Request) -> tide::Result {
     let celeb_name = req.param("username")?;
 
-    let (claims, token) = auth::Auth::authenticate(&req)?;
+    let (claims, _) = auth::Auth::authenticate(&req)?;
 
     db::user::unfollow(&req.state().conn, &claims.username, &celeb_name)
         .await 
@@ -132,7 +131,7 @@ pub(crate) async fn create_article(mut req: Request) -> tide::Result {
 
 pub(crate) async fn get_article(req: Request) -> tide::Result {
     let slug = req.param("slug")?;
-    let filter = filters::ArticleFilterBySlug { slug };
+    let filter = filters::ArticleFilterByValues::default().slug(slug.to_string());
 
     db::article::get_one(&req.state().conn, filter)
         .await 
@@ -177,7 +176,7 @@ pub(crate) async fn update_article(mut req: Request) -> tide::Result {
             // if optimistic update fails, try to verify if this happened
             // because user is not authorized to do so
             crate::errors::BackendError::NoArticleFound => {
-                let filter = filters::ArticleFilterBySlug { slug };
+                let filter = filters::ArticleFilterByValues::default().slug(slug.to_string());
                 if let Ok(article_response) = db::article::get_one(&req.state().conn, filter).await {
 
                     auth::Auth::authorize(&req, &article_response.article.author)
@@ -196,7 +195,7 @@ pub(crate) async fn update_article(mut req: Request) -> tide::Result {
     res
 }
 
-pub(crate) async fn delete_article(mut req: Request) -> tide::Result {
+pub(crate) async fn delete_article(req: Request) -> tide::Result {
     let (claims, _) = auth::Auth::authenticate(&req)?;
 
     let slug = req.param("slug")?;
@@ -208,7 +207,7 @@ pub(crate) async fn delete_article(mut req: Request) -> tide::Result {
     let query_res = db::article::delete_article(&req.state().conn, filter).await?;
 
     if 0 == query_res.rows_affected() {
-        let filter = filters::ArticleFilterBySlug { slug };
+        let filter = filters::ArticleFilterByValues::default().slug(slug.to_string());
         if let Ok(article_response) = db::article::get_one(&req.state().conn, filter).await {
 
             auth::Auth::authorize(&req, &article_response.article.author)
@@ -230,7 +229,7 @@ pub(crate) async fn favorite_article(req: Request) -> tide::Result {
     let (claims, _) = auth::Auth::authenticate(&req)?;
 
     let slug = req.param("slug")?;
-    let filter = filters::ArticleFilterBySlug { slug };
+    let filter = filters::ArticleFilterByValues::default().slug(slug.to_string());
 
     db::article::favorite_article(&req.state().conn, filter, &claims.username)
         .await 
@@ -244,10 +243,10 @@ pub(crate) async fn unfavorite_article(req: Request) -> tide::Result {
     let (claims, _) =  auth::Auth::authenticate(&req)?;
 
     let slug = req.param("slug")?;
-    let filter = filters::ArticleFilterBySlug { slug };
+    let filter = filters::ArticleFilterByValues::default().slug(slug.to_string());
 
     db::article::unfavorite_article(&req.state().conn, filter, &claims.username)
-        .await 
+        .await
         .and_then(|article_response| 
             Ok(json!(article_response.wrap()).into())
         )
@@ -276,7 +275,7 @@ pub(crate) async fn add_comment(mut req: Request) -> tide::Result {
     let slug = req.param("slug")?;
     let author = &claims.username;
 
-    let filter = filters::ArticleFilterBySlug { slug };
+    let filter = filters::ArticleFilterByValues::default().slug(slug.to_string());
 
     db::article::add_comment(&req.state().conn, filter, author, &wrapped.comment)
         .await 
