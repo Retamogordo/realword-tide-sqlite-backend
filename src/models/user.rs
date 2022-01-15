@@ -16,12 +16,25 @@ pub(crate) struct UserRegWrapped {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")] 
 pub(crate) struct UserUpdate {
     pub username: Option<String>,
     pub email: Option<String>,
     pub password: Option<String>,
     pub bio: Option<String>,
     pub image: Option<String>,
+}
+
+impl std::fmt::Display for UserUpdate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.username.as_ref().map(|val| 
+            write!( f, " {}='{}' ", "username", val) ).unwrap_or(Ok(()))?;
+        self.email.as_ref().map(|val| write!( f, " {}='{}' ,", "email", val) ).unwrap_or(Ok(()))?;
+        self.password.as_ref().map(|val| write!( f, " {}='{}' ,", "password", val) ).unwrap_or(Ok(()))?;
+        self.bio.as_ref().map(|val| write!( f, " {}='{}' ,", "bio", val) ).unwrap_or(Ok(()))?;
+        self.image.as_ref().map(|val| write!( f, " {}='{}' ,", "image", val) ).unwrap_or(Ok(()))?;
+        write!( f, " id=id ")
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -1,15 +1,15 @@
 use sqlx::{Pool};
 use sqlx::sqlite::{Sqlite};
-use crate::models::{user};
+use crate::{models::user, filters, errors};
 
 pub(crate) async fn register_user(conn: &Pool<Sqlite>,
     user: &user::UserReg,
-) -> Result<(), crate::errors::RegistrationError>  {
+) -> Result<(), crate::errors::BackendError>  {
     sqlx::query(
             "INSERT INTO users (username, email, password)
             VALUES( ?,	?, ?);\n
-            INSERT INTO profiles (username)
-            VALUES( ?);
+            INSERT INTO profiles (username, user_id)
+            SELECT username, id FROM users WHERE username=?;
             ")
         .bind(&user.username)
         .bind(&user.email)
@@ -20,77 +20,49 @@ pub(crate) async fn register_user(conn: &Pool<Sqlite>,
     Ok(())
 }
 
-pub(crate) async fn get_user_by_email(conn: &Pool<Sqlite>,
-    email: &str,
-) -> Result<user::User, crate::errors::RegistrationError>  {
+pub(crate) async fn get_user(conn: &Pool<Sqlite>,
+    filter: filters::UserFilter,
+) -> Result<user::User, crate::errors::BackendError>  {
 
-    let user: user::User = sqlx::query_as::<_, user::User>(
-        "SELECT *, NULL as `token` FROM users LEFT JOIN profiles ON users.username = profiles.username WHERE email = ?;")
-//            "SELECT *, NULL as `token` FROM users LEFT JOIN profiles ON users.username = profiles.username WHERE users.username = ?;")
-        .bind(email)
+    let statement = format!("\
+        SELECT *, NULL as `token` FROM users \
+            LEFT JOIN profiles ON users.username = profiles.username \
+            WHERE {};", filter
+    );
+
+    let user: user::User = sqlx::query_as::<_, user::User>(&statement)
         .fetch_optional(conn)   
         .await?
-        .ok_or(crate::errors::RegistrationError::NoUserFound(email.to_string()))?;
-    Ok(user)
-}
-
-pub(crate) async fn get_user_by_username(conn: &Pool<Sqlite>,
-    username: &str,
-) -> Result<user::User, crate::errors::RegistrationError>  {
-
-    let user: user::User = sqlx::query_as::<_, user::User>(
-        "SELECT *, NULL as `token` FROM users LEFT JOIN profiles ON users.username = profiles.username WHERE users.username = ?;")
-//            "SELECT *, NULL as `token` FROM users LEFT JOIN profiles ON users.username = profiles.username WHERE users.username = ?;")
-        .bind(username)
-        .fetch_optional(conn)   
-        .await?
-        .ok_or(crate::errors::RegistrationError::NoUserFound(username.to_string()))?;
+        .ok_or(crate::errors::BackendError::NoUserFound(filter.to_string()))?;
     Ok(user)
 }
 
 pub(crate) async fn update_user(conn: &Pool<Sqlite>,
-    username: &str,
-    user: &user::UserUpdate,
-) -> Result<user::User, crate::errors::RegistrationError>  {
-    // use "dummy" set username=username for case there is nothing to update,
-    // probably there is better way to perform this "empty update"
-    let statement = "UPDATE users SET username=username, "; 
-    let mut s = format!("{}", statement);
- //  let mut email_changed = false;
+    updated_user: &user::UserUpdate,
+    filter: filters::UpdateUserFilter<'_>
+) -> Result<user::User, crate::errors::BackendError>  {
 
-    let new_username = if let Some(new_username) = user.username.as_ref() {
-        s = format!("{} username = '{}',", s, new_username);
-        new_username
-    } else { username };
+    let statement = format!("UPDATE users SET {} WHERE {} ", updated_user, filter);
 
-    if let Some(email) = user.email.as_ref() {
-        s = format!("{} email = '{}',", s, email);
- //       email_changed = true;
-    }
-    s = format!("{} WHERE username = '{}';", s.split_at(s.len()-1).0, username);
-    
-    // use "dummy" set bio=bio for case there is nothing to update
-    // probably there is better way to perform this "empty update"
-    s = format!("{} UPDATE profiles SET bio=bio,", s); 
-    if let Some(bio) = user.bio.as_ref() {
-        s = format!("{} bio = '{}',", s, bio);
-    }
-    if let Some(image) = user.username.as_ref() {
-        s = format!("{} image = '{}',", s, image);
-    }
-    s = format!("{} WHERE username = '{}';", s.split_at(s.len()-1).0, new_username);
-    
-    sqlx::query(&s)
+    let query_res = sqlx::query(&statement)
         .execute(conn)    
         .await?;
+    
+    let filter = filters::UserFilter{
+        username: updated_user.username.clone(), 
+        email: updated_user.email.clone()
+    };
 
-    get_user_by_username(conn, new_username).await
+    if 0 < query_res.rows_affected() {    
+        get_user(conn, filter).await
+    } else { 
+        Err(errors::BackendError::NoUserFound(filter.to_string()))
+    }
 }
 
 pub(crate) async fn get_profile(conn: &Pool<Sqlite>,
     username: &str,
 ) -> Option<user::Profile> {
-//-> Result<user::Profile, crate::errors::RegistrationError>  {
 
     let profile = sqlx::query_as::<_, user::Profile>(
             &format!("SELECT *, 
@@ -101,21 +73,17 @@ pub(crate) async fn get_profile(conn: &Pool<Sqlite>,
             INNER JOIN users ON profiles.username = users.username 
             WHERE profiles.username = '{}';
     ", username, username))
-//        .bind(username)
-//        .bind(username)
         .fetch_optional(conn)   
         .await
         .unwrap_or(None);
 
     profile
-//        .ok_or(crate::errors::RegistrationError::NoUserFound(username.to_string()))?;
-//    Ok(profile)
 }
 
 pub(crate) async fn follow(conn: &Pool<Sqlite>,
     follower_name: &str,
     celeb_name: &str,
-) -> Result<user::Profile, crate::errors::RegistrationError>  {
+) -> Result<user::Profile, crate::errors::BackendError>  {
     
     sqlx::query("INSERT INTO followers (follower_name, celeb_name)
         VALUES( ?,?) ON CONFLICT DO NOTHING;")
@@ -126,22 +94,21 @@ pub(crate) async fn follow(conn: &Pool<Sqlite>,
 
     get_profile(conn, celeb_name)
         .await
-        .ok_or(crate::errors::RegistrationError::NoUserFound(celeb_name.to_string()))
+        .ok_or(crate::errors::BackendError::NoUserFound(celeb_name.to_string()))
 }
+
 pub(crate) async fn unfollow(conn: &Pool<Sqlite>,
     follower_name: &str,
     celeb_name: &str,
-) -> Result<user::Profile, crate::errors::RegistrationError>  {
+) -> Result<user::Profile, crate::errors::BackendError>  {
 
     let statement = format!("DELETE FROM followers WHERE follower_name='{}' AND celeb_name='{}';", follower_name, celeb_name);
     sqlx::query(&statement)
-//        .bind(follower_name)
-//        .bind(celeb_name)
         .execute(conn)    
         .await?;
 
     get_profile(conn, celeb_name)
         .await
-        .ok_or(crate::errors::RegistrationError::NoUserFound(celeb_name.to_string()))
+        .ok_or(crate::errors::BackendError::NoUserFound(celeb_name.to_string()))
 
 }

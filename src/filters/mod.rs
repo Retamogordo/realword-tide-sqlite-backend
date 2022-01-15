@@ -1,34 +1,89 @@
-//use tide::{Response, Next, Result, StatusCode};
 use tide::prelude::*;
 
-//use sqlx::prelude::*;
+pub(crate) trait Filter: std::fmt::Display {}
 
-//use validator::{Validate};
-//use async_std::fs::File;
-//use async_std::io::ReadExt;
+#[derive(Deserialize)]
+#[serde(default)]
+pub(crate) struct UserFilter {
+    pub username: Option<String>,
+    pub email: Option<String>,
+}
 
-pub(crate) trait ArticleFilter: std::fmt::Display {}
+impl UserFilter {
+    pub fn username(mut self, username: &str) -> Self {
+        self.username = Some(username.to_string());
+        self
+    } 
+    pub fn email(mut self, email: &str) -> Self {
+        self.email = Some(email.to_string());
+        self
+    } 
+}
+impl Filter for UserFilter {}
+
+impl Default for UserFilter {
+    fn default() -> Self {
+        Self { 
+            username: None,
+            email: None,
+        }
+    }
+}
+
+impl std::fmt::Display for UserFilter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.username.as_ref().map(|val| write!( f, " {}='{}' AND", "users.username", val) ).unwrap_or(Ok(()))?;
+        self.email.as_ref().map(|val| write!( f, " {}='{}' AND", "users.email", val) ).unwrap_or(Ok(()))?;
+        write!( f, " 1=1")
+    }
+}
+
+pub(crate) struct UpdateUserFilter<'a> {
+    pub username: Option<&'a str>,
+    pub email: Option<&'a str>,
+}
+
+impl<'a> UpdateUserFilter<'a> {
+    pub fn username(mut self, username: &'a str) -> Self {
+        self.username = Some(username);
+        self
+    }
+    pub fn email(mut self, email: &'a str) -> Self {
+        self.email = Some(email);
+        self
+    }
+}
+
+impl Filter for UpdateUserFilter<'_> {}
+
+impl std::fmt::Display for UpdateUserFilter<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.username.as_ref().map(|val| write!( f, " {}='{}' AND", "users.username", val) ).unwrap_or(Ok(()))?;
+        self.email.as_ref().map(|val| write!( f, " {}='{}' AND", "users.email", val) ).unwrap_or(Ok(()))?;
+        write!( f, " 1=1")
+    }
+}
+impl Default for UpdateUserFilter<'_> {
+    fn default() -> Self {
+        Self { 
+            username: None,
+            email: None,
+        }
+    }
+}
 
 #[derive(Deserialize)]
 pub(crate) struct ArticleFilterBySlug<'a> {
     pub slug: &'a str,
 }
 
-impl ArticleFilter for ArticleFilterBySlug<'_> {}
+impl Filter for ArticleFilterBySlug<'_> {}
 impl std::fmt::Display for ArticleFilterBySlug<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!( f, " {}='{}'", "slug", self.slug)
     }
 }
-/*
-#[derive(Deserialize)]
-#[serde(default)]
-pub(crate) struct ArticleFilterByValues {
-    pub author: Option<String>,
-    pub tag: Option<String>,
-    pub favorited: Option<String>,
-}
-*/
+
 #[derive(Deserialize)]
 #[serde(default)]
 pub(crate) struct ArticleFilterByValues {
@@ -37,7 +92,7 @@ pub(crate) struct ArticleFilterByValues {
     pub favorited: Option<String>,
 }
 
-impl ArticleFilter for ArticleFilterByValues {}
+impl Filter for ArticleFilterByValues {}
 
 impl Default for ArticleFilterByValues {
     fn default() -> Self {
@@ -56,9 +111,6 @@ impl std::fmt::Display for ArticleFilterByValues {
         self.favorited.as_ref().map(|val| 
             write!( f, " {}='{}' AND", "favorite_articles.username", val) 
         ).unwrap_or(Ok(()))?;
-//        self.slug.as_ref().map(|val| write!( f, " {}='{}' AND", "slug", val) ).unwrap_or(Ok(()))?;
-
-        //        write!( f, " {}={} AND", "favorited", if self.favorited {1} else {0})?;
         write!( f, " 1=1")
     }
 }
@@ -69,7 +121,7 @@ pub(crate) struct ArticleFilterFeed<'a> {
     pub follower: &'a str,
 }
 
-impl ArticleFilter for ArticleFilterFeed<'_> {}
+impl Filter for ArticleFilterFeed<'_> {}
 
 impl std::fmt::Display for ArticleFilterFeed<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -83,63 +135,16 @@ pub(crate) struct UpdateArticleFilter<'a> {
     pub slug: &'a str,
     pub author: &'a str,
 }
-impl ArticleFilter for UpdateArticleFilter<'_> {}
+impl Filter for UpdateArticleFilter<'_> {}
 
 impl std::fmt::Display for UpdateArticleFilter<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!( f, " slug='{}' AND author='{}'", self.slug, self.author)
     }
 }
-/*
-#[derive(Debug, Deserialize, Clone)]
-//#[serde(default)]
-pub(crate) struct UpdateArticleFilter_old<'a> {
-    #[serde(skip_deserializing)]
-    pub slug: &'a str,
-    #[serde(skip_deserializing)]
-    pub author: &'a str,
-    #[serde(deserialize_with = "slugify_article_on_update")]    
-    article: crate::models::article::UpdateArticleRequest,
-}
 
-impl UpdateArticleFilter_old<'_> {
-    pub fn updated_slug(&self) -> &str {
-        if let Some(ref slug) = self.article.slug_from_title {
-            slug
-        } else { 
-            self.slug
-        }
-    }
-}
-*/
-
-/*
-impl Default for UpdateArticleFilter_old<'_> {
-    fn default() -> Self {
-        Self { 
-            slug: "",
-            title: None,
-            description: None,
-            body: None, 
-        }
-    }
-}
-*/
-/*
-impl std::fmt::Display for UpdateArticleFilter_old<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use slugify::slugify;
-
-        self.article.title.as_ref().map(|val| 
-            write!( f, " {}='{}' , {}='{}'", "title", val, "slug", slugify!(val)) ).unwrap_or(Ok(()))?;
-        self.article.description.as_ref().map(|val| write!( f, " {}='{}' ,", "description", val) ).unwrap_or(Ok(()))?;
-        self.article.body.as_ref().map(|val| write!( f, " {}='{}' ,", "body", val) ).unwrap_or(Ok(()))?;
-        write!( f, " id=id ")?;
-        write!( f, " WHERE slug='{}' AND author='{}'", self.slug, self.author)
-    }
-}
-*/
 pub(crate) enum OrderByFilter<'a> {
+    #[allow(dead_code)]
     Ascending(&'a str),
     Descending(&'a str),
     None,
@@ -162,14 +167,30 @@ impl Default for OrderByFilter<'_> {
 }
 
 pub(crate) struct CommentFilterByValues<'a> {
+    pub id: Option<i32>,
     pub author: Option<&'a str>,
     pub article_slug: Option<&'a str>,
-//    pub order: OrderByFilter<'a>,
+}
+
+impl<'a> CommentFilterByValues<'a> {
+    pub fn id(mut self, id: i32) -> Self {
+        self.id = Some(id);
+        self
+    }
+    pub fn author(mut self, author: &'a str) -> Self {
+        self.author = Some(author);
+        self
+    }
+    pub fn article_slug(mut self, article_slug: &'a str) -> Self {
+        self.article_slug = Some(article_slug);
+        self
+    }
 }
 
 impl Default for CommentFilterByValues<'_> {
     fn default() -> Self {
         Self { 
+            id: None,
             author: None,
             article_slug: None,
         }
@@ -178,6 +199,7 @@ impl Default for CommentFilterByValues<'_> {
 
 impl std::fmt::Display for CommentFilterByValues<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.id.as_ref().map(|val| write!( f, " {}='{}' AND", "id", val) ).unwrap_or(Ok(()))?;
         self.author.as_ref().map(|val| write!( f, " {}='{}' AND", "author", val) ).unwrap_or(Ok(()))?;
         self.article_slug.as_ref().map(|val|
             write!( f, 
@@ -194,6 +216,17 @@ impl std::fmt::Display for CommentFilterByValues<'_> {
 pub(crate) struct LimitOffsetFilter {
     pub limit: Option<i32>,
     pub offset: Option<i32>,
+}
+
+impl LimitOffsetFilter {
+    pub fn limit(mut self, limit: i32) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+    pub fn offset(mut self, offset: i32) -> Self {
+        self.offset = Some(offset);
+        self
+    }
 }
 
 impl Default for LimitOffsetFilter {

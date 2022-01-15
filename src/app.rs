@@ -1,6 +1,4 @@
 
-use async_std::fs::File;
-use async_std::io::ReadExt;
 use sqlx::sqlite::{SqlitePool};
 use crate::endpoints::*;
 
@@ -69,6 +67,7 @@ impl App {
         app.at("/api/articles/:slug/favorite").delete(unfavorite_article);
         app.at("/api/articles/:slug/comments").post(add_comment);
         app.at("/api/articles/:slug/comments").get(get_comments);
+        app.at("/api/articles/:slug/comments/:id").delete(delete_comment);
         app.at("/api/tags").get(get_tags);
      
         app.listen("127.0.0.1:3000").await?;

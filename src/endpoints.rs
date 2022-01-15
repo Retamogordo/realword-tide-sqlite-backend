@@ -31,7 +31,9 @@ pub(crate) async fn register(mut req: Request) -> tide::Result {
 pub(crate) async fn login(mut req: Request) -> tide::Result {
     println!("in login");
     let login_req: LoginRequestWrapped = req.body_json().await?;
-    let res = match db::user::get_user_by_email(&req.state().conn, &login_req.user.email).await {
+    let filter = filters::UserFilter::default().email(&login_req.user.email);
+
+    let res = match db::user::get_user(&req.state().conn, filter).await {
         Ok(user) => {
             let mut user: User = user.into();
             user.token = Some(auth::Auth::create_token(&user, &req.state().secret)?);
@@ -45,8 +47,9 @@ pub(crate) async fn login(mut req: Request) -> tide::Result {
 pub(crate) async fn current_user(req: Request) -> tide::Result {
 
     let (claims, token) = auth::Auth::authenticate(&req)?;
-
-    let res = match db::user::get_user_by_username(&req.state().conn, &claims.username).await {
+    let filter = filters::UserFilter::default().username(&claims.username);
+    
+    let res = match db::user::get_user(&req.state().conn, filter).await {
         Ok(user) => {
             let mut user: User = user.into();
             user.token = Some(token);
@@ -65,18 +68,18 @@ pub(crate) async fn profile(req: Request) -> tide::Result {
             Ok(json!(profile.wrap()).into())
         },
         None => 
-        crate::errors::RegistrationError::NoUserFound(username.to_string()).into()
+        crate::errors::BackendError::NoUserFound(username.to_string()).into()
     };
     res          
 }
-
 
 pub(crate) async fn update_user(mut req: Request) -> tide::Result {
     let (claims, token) = auth::Auth::authenticate(&req)?;
 
     let update_user: UserUpdateWrapped = req.body_json().await?;
+    let filter = filters::UpdateUserFilter::default().username(&claims.username);
 
-    db::user::update_user(&req.state().conn, &claims.username, &update_user.user)
+    db::user::update_user(&req.state().conn, &update_user.user, filter)
         .await
         .and_then(|user| {
             let mut user: User = user.into();
@@ -173,7 +176,7 @@ pub(crate) async fn update_article(mut req: Request) -> tide::Result {
             // NoArticleFound error is returned
             // if optimistic update fails, try to verify if this happened
             // because user is not authorized to do so
-            crate::errors::RegistrationError::NoArticleFound => {
+            crate::errors::BackendError::NoArticleFound => {
                 let filter = filters::ArticleFilterBySlug { slug };
                 if let Ok(article_response) = db::article::get_one(&req.state().conn, filter).await {
 
@@ -184,7 +187,7 @@ pub(crate) async fn update_article(mut req: Request) -> tide::Result {
                         )
 
                 } else {
-                    crate::errors::RegistrationError::NoArticleFound.into()
+                    crate::errors::BackendError::NoArticleFound.into()
                 }
             },
             err @ _ =>  err.into(),
@@ -215,7 +218,7 @@ pub(crate) async fn delete_article(mut req: Request) -> tide::Result {
                 )
 
         } else {
-            crate::errors::RegistrationError::NoArticleFound.into()
+            crate::errors::BackendError::NoArticleFound.into()
         }
     } else {
         Ok(json!(()).into())
@@ -285,6 +288,7 @@ pub(crate) async fn add_comment(mut req: Request) -> tide::Result {
 
 pub(crate) async fn get_comments(req: Request) -> tide::Result {
     let mut filter = filters::CommentFilterByValues { 
+        id: None,
         article_slug: Some(req.param("slug")?),
         author: None
     };
@@ -299,9 +303,48 @@ pub(crate) async fn get_comments(req: Request) -> tide::Result {
     db::article::get_comments(&req.state().conn, filter, order_by, limit_offset)
         .await 
         .and_then(|comments|
-          Ok(json!(comments).into())
+          Ok(json!(MultipleCommentResponse { comments }).into())
         )
         .or_else(|err| err.into())
+}
+
+pub(crate) async fn delete_comment(req: Request) -> tide::Result {
+    let (claims, _) = auth::Auth::authenticate(&req)?;
+    
+    let id = req.param("id")?.parse::<i32>()?;
+
+    let filter = filters::CommentFilterByValues::default().id(id).author(&claims.username);
+
+    let query_res = db::article::delete_comments(&req.state().conn, filter).await?;
+    // if no comment has been deleted, check if user is authorized to do so    
+    if 0 == query_res.rows_affected() {
+        let filter = filters::CommentFilterByValues::default().id(id); 
+
+        let comments = db::article::get_comments(&req.state().conn, 
+                                                filter, 
+                                                filters::OrderByFilter::default(), 
+                                                filters::LimitOffsetFilter::default().limit(1))
+            .await; 
+
+        match comments {
+            Ok(comments) =>
+                if let Some(comment) = comments.iter().next() {
+
+                    auth::Auth::authorize(&req, &comment.comment.author)
+                        .and(
+                            Err(tide::Error::from_str(
+                                tide::StatusCode::InternalServerError, "could not delete comment despite user has been authorized, probably due to a bug"))
+                        )
+
+                } else {
+                    crate::errors::BackendError::NoCommentFound(id).into()
+                },
+            Err(err) => err.into()
+        }
+    } else {
+        Ok(json!(()).into())
+    }
+
 }
 
 pub(crate) async fn get_tags(req: Request) -> tide::Result {
