@@ -2,7 +2,7 @@ use tide::prelude::*;
 
 const DB_UNIQUE_CONSTRAINT_VIOLATION: &str = "1555";
 const SQLITE_CONSTRAINT_UNIQUE: &str = "2067";
-
+/*
 pub(crate) struct FromValidatorError(pub validator::ValidationErrors);
 
 impl Into<tide::Result> for FromValidatorError {
@@ -16,32 +16,47 @@ impl From<validator::ValidationErrors> for FromValidatorError {
         Self(err)
     }
 }
-
+*/
 #[derive(Debug, Serialize)]
-pub(crate) enum BackendError {
+pub enum BackendError {
 //    InvalidEmail,
     UsernameOrEmailExists,
+    TokenCreationFailure(String),
+    ValidationError(String),
+    AuthenticationFailure,
+    Forbidden,
     NoUserFound(String),
     NoArticleFound,
     NoCommentFound(i32),
     NoCommentAdded,
     UnhandledDBError(String),
+    UnexpectedError(String),
 }
 
 
 impl std::fmt::Display for BackendError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!( f, "{}", 
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { 
             match self {
-                Self::UsernameOrEmailExists => "username or email is already taken".to_string(),
-                Self::NoUserFound(user_data) => format!("user with {} not found", user_data),
-                Self::NoArticleFound => "article not found".to_string(),
-                Self::NoCommentFound(id) => format!("comment with id {} not found", id),
-                Self::NoCommentAdded => "no comment added".to_string(),
+                Self::UsernameOrEmailExists => write!( f, "{}", "username or email is already taken"),
+                Self::TokenCreationFailure(message) => write!( f, "{}", format!("JWT not created, reason: {}", message)),
+                Self::ValidationError(message) => write!( f, "{}", message),
+                Self::AuthenticationFailure => write!( f, "{}", "authentication failure"),
+                Self::Forbidden => write!( f, "{}", "operation not authorized"),
+                Self::NoUserFound(user_data) => write!( f, "{}", format!("user with {} not found", user_data)),
+                Self::NoArticleFound => write!( f, "{}", "article not found"),
+                Self::NoCommentFound(id) => write!( f, "{}", format!("comment with id {} not found", id)),
+                Self::NoCommentAdded => write!( f, "{}", "no comment added"),
                 Self::UnhandledDBError(msg) =>  
-                        format!("Unhandled db error: {}", msg),
+                    write!( f, "{}", format!("Unhandled db error: {}", msg)),
+                Self::UnexpectedError(msg) => 
+                    write!( f, "{}", format!("Unexpected server error occured: {}", msg)),
             }
-        )
+    }
+}
+
+impl From<validator::ValidationErrors> for BackendError {
+    fn from(err: validator::ValidationErrors) -> Self {
+        Self::ValidationError(err.to_string())
     }
 }
 
@@ -52,6 +67,8 @@ impl Into<tide::Result> for BackendError {
 //            Self::InvalidEmail => {
 //                "email is invalid".to_string()
 //            },
+            Self::ValidationError(_)
+            |
             Self::UsernameOrEmailExists 
             |
             Self::NoUserFound(_)  
@@ -63,12 +80,24 @@ impl Into<tide::Result> for BackendError {
             Self::NoCommentFound(_) => {
                 Ok(tide::Response::from(json!({ "errors":{"body": [ message ] }})))    
             }
-            Self::UnhandledDBError(_) => 
+            Self::UnhandledDBError(_)
+            |
+            Self::TokenCreationFailure(_) => 
 //                tide::StatusCode::InternalServerError, 
                 Err(tide::Error::from_str(tide::StatusCode::InternalServerError, 
-                    json!({ "errors":{"body": [ message ] }})))    
+                    json!({ "errors":{"body": [ message ] }}))),
+            Self::AuthenticationFailure => Err(tide::Error::from_str(tide::StatusCode::Unauthorized, self.to_string())),
+            Self::Forbidden => Err(tide::Error::from_str(tide::StatusCode::Forbidden, self.to_string())),
+            Self::UnexpectedError(_) => Err(tide::Error::from_str(tide::StatusCode::InternalServerError, self.to_string())),
+                
         }
 //        tide::Error::from_str(status, json!({ "errors":{"body": [ message ] }}))
+    }
+}
+
+impl From<jsonwebtoken::errors::Error> for BackendError {
+    fn from(err: jsonwebtoken::errors::Error) -> Self {
+        Self::TokenCreationFailure(err.to_string())
     }
 }
 

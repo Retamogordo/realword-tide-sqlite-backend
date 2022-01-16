@@ -1,5 +1,5 @@
 use sqlx::sqlite::{SqlitePool};
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions, Sqlite};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::str::FromStr;
 use crate::app;
 

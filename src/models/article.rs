@@ -3,7 +3,7 @@ use crate::utils::*;
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")] 
-pub(crate) struct CreateArticleRequest { 
+pub struct CreateArticleRequest { 
     #[serde(skip_deserializing)]
     pub slug: String,
     pub title: String,
@@ -32,7 +32,7 @@ where
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 #[sqlx(rename_all = "camelCase")]
-pub(crate) struct Article { 
+pub struct Article { 
     pub slug: Option<String>,
     pub title: String,
     pub description: Option<String>,
@@ -49,8 +49,8 @@ pub(crate) struct Article {
     pub author: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub(crate) struct ArticleResponse {
+#[derive(Debug, Serialize, Clone)]
+pub struct ArticleResponse {
     pub author: Option<super::user::Profile>,
     #[serde(flatten)]
     pub article: Article,
@@ -69,7 +69,7 @@ pub(crate) struct ArticleResponseWrapped {
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct MultipleArticleResponse {
+pub struct MultipleArticleResponse {
     pub articles: Vec<ArticleResponse>,
     articles_count: usize,
 }
@@ -86,7 +86,7 @@ impl MultipleArticleResponse {
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")] 
-pub(crate) struct UpdateArticle { 
+pub struct UpdateArticle { 
     pub title: Option<String>,
     pub description: Option<String>,
     pub body: Option<String>,
@@ -132,7 +132,7 @@ where
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 #[sqlx(rename_all = "camelCase")]
-pub(crate) struct Comment { 
+pub struct Comment { 
     pub id: i32,
     #[serde(serialize_with = "transform_datetime")]    
     pub created_at: chrono::DateTime<chrono::Utc>,
@@ -143,15 +143,15 @@ pub(crate) struct Comment {
     pub author: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub(crate) struct CommentResponse {
+#[derive(Debug, Serialize, Clone)]
+pub struct CommentResponse {
     pub author: Option<crate::models::user::Profile>,
     #[serde(flatten)]
     pub comment: Comment,
 }
 
 impl CommentResponse {
-    pub fn wrap(self) -> CommentResponseWrapped {
+    pub(crate) fn wrap(self) -> CommentResponseWrapped {
         CommentResponseWrapped {comment: self}
     }
 }
@@ -163,7 +163,7 @@ pub(crate) struct CommentResponseWrapped {
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct MultipleCommentResponse {
+pub struct MultipleCommentResponse {
     pub comments: Vec<CommentResponse>,
 }
 
@@ -178,7 +178,7 @@ impl MultipleCommentResponse {
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")] 
-pub(crate) struct AddCommentRequest { 
+pub struct AddCommentRequest { 
     pub body: String,
 }
 
@@ -189,6 +189,6 @@ pub(crate) struct AddCommentRequestWrapped {
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct TagList {
+pub struct TagList {
     pub tags: Vec<String>,
 }

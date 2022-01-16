@@ -1,4 +1,7 @@
 use tide::prelude::*;
+use crate::endpoints::Request;
+
+const TOKEN: &'static str = "Token ";
 
 pub(crate) fn transform_string_to_vec<S>(tag_list: &Option<String>, serializer: S) -> std::result::Result<S::Ok, S::Error>
 where
@@ -23,3 +26,12 @@ where
         .serialize(serializer)
 }
 
+pub(crate) fn token_from_request(req: &Request) -> Result<&str, tide::Error> {
+    let hdr = req.header(http_types::headers::AUTHORIZATION)
+        .ok_or(tide::Error::from_str(tide::StatusCode::Unauthorized, "no authorization header in request"))?
+        .get(0)
+        .ok_or(tide::Error::from_str(tide::StatusCode::Unauthorized, "no token in request header"))?;
+
+    let token = hdr.as_str().trim_start_matches(TOKEN).trim_start();
+    Ok(token)
+}

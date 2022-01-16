@@ -1,9 +1,10 @@
 
 use sqlx::sqlite::{SqlitePool};
-use crate::endpoints::*;
+use crate::{endpoints::*, backend};
+
 
 #[derive(Debug)]
-pub(crate) struct Config {
+pub struct Config {
     pub database_url_prefix: String,
     pub database_url_path: String,
     pub database_file: String,
@@ -30,12 +31,13 @@ impl Config {
 
 #[derive(Clone)]
 pub(crate) struct AppState {
-    pub conn: SqlitePool,
+    pub server: backend::Server,
+//    pub conn: SqlitePool,
     pub secret: &'static [u8],
 }
 
 #[derive(Debug)]
-pub(crate) struct App {
+pub struct App {
     config: Config,
 }
 
@@ -49,7 +51,12 @@ impl App {
         .await
         .expect("failed to connect to sqlite database. ");
 
-        let mut app = tide::with_state(AppState { conn, secret: self.config.secret.as_bytes()} );
+        let mut app = tide::with_state(
+            AppState { 
+                server: backend::Server::with_db_conn(conn).secret(self.config.secret.as_bytes()),
+//                conn, 
+                secret: self.config.secret.as_bytes()
+        } );
 
         app.at("/api/users").post(register);
     

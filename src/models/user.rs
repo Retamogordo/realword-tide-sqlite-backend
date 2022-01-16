@@ -2,22 +2,22 @@ use tide::prelude::*;
 //use sqlx::prelude::*;
 use validator::{Validate};
 
-#[derive(Debug, Serialize, Deserialize, Validate)]
-pub(crate) struct UserReg {
+#[derive(Debug, Deserialize, Validate)]
+pub struct UserReg {
     pub username: String,
     #[validate(email)]
     pub email: String,
     pub password: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub(crate) struct UserRegWrapped {
     pub user: UserReg,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")] 
-pub(crate) struct UserUpdate {
+pub struct UserUpdate {
     pub username: Option<String>,
     pub email: Option<String>,
     pub password: Option<String>,
@@ -37,7 +37,7 @@ impl std::fmt::Display for UserUpdate {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub(crate) struct UserUpdateWrapped {
 //    user: String,
     pub user: UserUpdate,
@@ -45,7 +45,7 @@ pub(crate) struct UserUpdateWrapped {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[derive(sqlx::FromRow)]
-pub(crate) struct User {
+pub struct User {
     pub email: String,    
     pub token: Option<String>,    
     pub username: String,    
@@ -66,18 +66,18 @@ impl From<UserReg> for User {
 }
 
 impl User {
-    pub fn wrap(self) -> UserWrapped {
+    pub(crate) fn wrap(self) -> UserWrapped {
         UserWrapped { user: self }
     }
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 pub(crate) struct UserWrapped {
     pub user: User,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[derive(sqlx::FromRow)]
-pub(crate) struct Profile {
+pub struct Profile {
     username: String,    
     bio: String,    
     image: Option<String>,  
@@ -85,12 +85,12 @@ pub(crate) struct Profile {
 }
 
 impl Profile {
-    pub fn wrap(self) -> ProfileWrapped {
+    pub(crate) fn wrap(self) -> ProfileWrapped {
         ProfileWrapped { profile: self }
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 pub(crate) struct ProfileWrapped {
     pub profile: Profile,
 }
@@ -107,7 +107,7 @@ pub(crate) struct LoginRequest {
     pub password: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub(crate) struct LoginRequestWrapped {
 //    user: String,
     pub user: LoginRequest,

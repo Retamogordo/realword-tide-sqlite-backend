@@ -218,7 +218,7 @@ pub(crate) async fn get_comments(conn: &Pool<Sqlite>,
 pub(crate) async fn add_comment(conn: &Pool<Sqlite>,
     filter: filters::ArticleFilterByValues,
     author: &str,
-    comment: &article::AddCommentRequest,
+    comment: article::AddCommentRequest,
 ) -> Result<article::CommentResponse, errors::BackendError>  {
 //) -> Result<(), errors::BackendError>  {
     let statement = format!("INSERT INTO comments (author, body, createdAt, updatedAt, article_id) VALUES( '{}','{}', datetime('now'), datetime('now'), (SELECT id FROM articles WHERE {} LIMIT 1));", 

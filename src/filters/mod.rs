@@ -4,7 +4,7 @@ pub(crate) trait Filter: std::fmt::Display + Default {}
 
 #[derive(Deserialize)]
 #[serde(default)]
-pub(crate) struct UserFilter {
+pub struct UserFilter {
     pub username: Option<String>,
     pub email: Option<String>,
 }
@@ -87,7 +87,7 @@ impl std::fmt::Display for ArticleFilterBySlug<'_> {
 */
 #[derive(Deserialize)]
 #[serde(default)]
-pub(crate) struct ArticleFilterByValues {
+pub struct ArticleFilterByValues {
     pub author: Option<String>,
     pub tag: Option<String>,
     pub favorited: Option<String>,
@@ -156,7 +156,7 @@ impl std::fmt::Display for ArticleFilterFeed<'_> {
 
 
 #[derive(Default)]
-pub(crate) struct UpdateArticleFilter<'a> {
+pub struct UpdateArticleFilter<'a> {
     pub slug: &'a str,
     pub author: &'a str,
 }
@@ -168,7 +168,7 @@ impl std::fmt::Display for UpdateArticleFilter<'_> {
     }
 }
 
-pub(crate) enum OrderByFilter<'a> {
+pub enum OrderByFilter<'a> {
     #[allow(dead_code)]
     Ascending(&'a str),
     Descending(&'a str),
@@ -191,7 +191,7 @@ impl Default for OrderByFilter<'_> {
     }
 }
 
-pub(crate) struct CommentFilterByValues<'a> {
+pub struct CommentFilterByValues<'a> {
     pub id: Option<i32>,
     pub author: Option<&'a str>,
     pub article_slug: Option<&'a str>,
@@ -238,7 +238,7 @@ impl std::fmt::Display for CommentFilterByValues<'_> {
 
 #[derive(Deserialize)]
 #[serde(default)]
-pub(crate) struct LimitOffsetFilter {
+pub struct LimitOffsetFilter {
     pub limit: Option<i32>,
     pub offset: Option<i32>,
 }

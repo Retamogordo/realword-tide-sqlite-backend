@@ -1,16 +1,9 @@
-mod db;
-mod auth;
-mod errors;
-mod filters;
-mod models;
-mod utils;
-mod endpoints;
-mod app;
 
 use async_std::fs::File;
 use async_std::io::ReadExt;
-use crate::endpoints::*;
 use once_cell::sync::OnceCell;
+
+use realworld_tide_sqlite_backend::*;
 
 static APP: OnceCell<app::App> = OnceCell::new();
 
@@ -23,7 +16,7 @@ async fn main() -> tide::Result<()> {
     
     APP.get().unwrap().run().await
 }
-
+/*
 async fn login_register(_req: Request) -> tide::Result {
     let mut hdr_file = File::open("./src/templates/header.html").await?;
     let mut home_file = File::open("./src/templates/login_register.html").await?;
@@ -92,4 +85,4 @@ async fn src(_req: Request) -> tide::Result {
     //    let user = UserRegWrapped { username: "dummy".to_string(), email: "qqq".to_string(), password: "ss".to_string() };
         Ok(response)
 }
-
+*/

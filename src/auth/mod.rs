@@ -1,6 +1,7 @@
 use tide::prelude::*;
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use crate::models::user::{User};
+use crate::{endpoints::Request, errors};
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct Claims {
@@ -12,56 +13,60 @@ pub(crate) struct Auth {
 }
 
 impl Auth {
-    const TOKEN: &'static str = "Token ";
-
     pub fn create_token(user: &User, secret: &'static [u8]) -> 
-        Result<String, tide::Error> {
+        Result<String, errors::BackendError> {
         let header = Header::new(Algorithm::HS512);
-        let exp = chrono::Utc::now()
-            .checked_add_signed(chrono::Duration::minutes(60))
-            .ok_or(tide::Error::from_str(tide::StatusCode::InternalServerError,"jwt creation error"))?
-            .timestamp();
-        let claims = Claims { 
-            username: user.username.clone(),
-            email: user.email.clone(), 
-            exp
-        };
-
-        let token = encode(
-            &header, 
-            &claims, 
-            &EncodingKey::from_secret(secret))?;
-
-        Ok(token)
+        match chrono::Utc::now() 
+            .checked_add_signed(chrono::Duration::minutes(60)) {
+                Some(t) => {
+                    let exp = t.timestamp();
+                    let claims = Claims { 
+                        username: user.username.clone(),
+                        email: user.email.clone(), 
+                        exp
+                    };
+            
+                    let token = encode(
+                        &header, 
+                        &claims, 
+                        &EncodingKey::from_secret(secret))?;
+            
+                    Ok(token)
+                },
+                None => Err(errors::BackendError::TokenCreationFailure("time calculation error".to_string()))
+            }
     }
 
-    pub fn authenticate(req: &crate::Request) -> Result<(Claims, String), tide::Error> {
-        let hdr = req.header(http_types::headers::AUTHORIZATION)
+    pub fn authenticate(token: &str, secret: &'static [u8]) -> Result<Claims, errors::BackendError> {
+/*        let hdr = req.header(http_types::headers::AUTHORIZATION)
             .ok_or(tide::Error::from_str(tide::StatusCode::Unauthorized, "no authorization header in request"))?
             .get(0)
             .ok_or(tide::Error::from_str(tide::StatusCode::Unauthorized, "no token in request header"))?;
         
         let token = hdr.as_str().trim_start_matches(Self::TOKEN).trim_start();
+        */
         let validation = Validation::new(Algorithm::HS512);
 //        validation.validate_exp = false;
 
         let decoded = decode(
                 token, 
-                &DecodingKey::from_secret(req.state().secret), 
+                &DecodingKey::from_secret(secret), 
                 &validation) 
-            .map_err(|_| tide::Error::from_str(tide::StatusCode::Unauthorized, "invalid token in request"))?;
+            .map_err(|_|  errors::BackendError::AuthenticationFailure)?;
+    //        .map_err(|_| tide::Error::from_str(tide::StatusCode::Unauthorized, "invalid token in request"))?;
 
-        Ok((decoded.claims, token.to_string()))
+        Ok(decoded.claims)
     }
     
-    pub fn authorize(req: &crate::Request, expected_user: &str) 
-        -> Result<(), tide::Error> {
-            let (claims, _) = Self::authenticate(req)?;
+    pub fn authorize(token: &str, secret: &'static [u8], expected_user: &str) 
+        -> Result<(), errors::BackendError> {
+            let claims = Self::authenticate(token, secret)?;
             if claims.username == expected_user {
                 Ok(())
             } else {
-                Err(tide::Error::from_str(tide::StatusCode::Forbidden, 
-                    format!("operation not authorized for {}", claims.username)))   
+                Err(errors::BackendError::Forbidden)
+     //           Err(tide::Error::from_str(tide::StatusCode::Forbidden, 
+     //               format!("operation not authorized for {}", claims.username)))   
             }
     }
 }

@@ -1,7 +1,5 @@
-//use sqlx::Connection;
 use sqlx::{Pool};
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions, Sqlite};
-use std::str::FromStr;
+use sqlx::sqlite::{Sqlite};
 use crate::app;
 
 pub(crate) mod article;
