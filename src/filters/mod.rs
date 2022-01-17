@@ -1,6 +1,6 @@
 use tide::prelude::*;
 
-pub(crate) trait Filter: std::fmt::Display + Default {}
+pub trait Filter: std::fmt::Display + Default {}
 
 #[derive(Deserialize)]
 #[serde(default)]
@@ -38,7 +38,7 @@ impl std::fmt::Display for UserFilter {
     }
 }
 
-pub(crate) struct UpdateUserFilter<'a> {
+pub struct UpdateUserFilter<'a> {
     pub username: Option<&'a str>,
     pub email: Option<&'a str>,
 }
@@ -140,7 +140,7 @@ impl std::fmt::Display for ArticleFilterByValues {
 
 #[derive(Deserialize, Default)]
 #[serde(default)]
-pub(crate) struct ArticleFilterFeed<'a> {
+pub struct ArticleFilterFeed<'a> {
     pub follower: &'a str,
 }
 

@@ -1,6 +1,3 @@
-
-use async_std::fs::File;
-use async_std::io::ReadExt;
 use once_cell::sync::OnceCell;
 
 use realworld_tide_sqlite_backend::*;
@@ -8,13 +5,13 @@ use realworld_tide_sqlite_backend::*;
 static APP: OnceCell<app::App> = OnceCell::new();
 
 #[async_std::main]
-async fn main() -> tide::Result<()> {
-    let cfg = app::Config::from_env();
-    let app = app::App::from_config(cfg);
+async fn main() -> std::result::Result<(), crate::errors::BackendError> {
+    let cfg = config::Config::from_env();
+    let app = app::App::new();
 
     APP.set(app).expect("Cannot create application instance.");
     
-    APP.get().unwrap().run().await
+    APP.get().unwrap().run(cfg).await
 }
 /*
 async fn login_register(_req: Request) -> tide::Result {

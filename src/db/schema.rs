@@ -1,7 +1,7 @@
 use sqlx::sqlite::{SqlitePool};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::str::FromStr;
-use crate::app;
+use crate::config::Config;
 
 pub(crate) struct Schema {
 //    sqlite_pool: &'a SqlitePool,
@@ -10,7 +10,7 @@ pub(crate) struct Schema {
 
 //impl<'a> Schema<'a> {
 impl Schema {
-    pub fn with_config(config: &app::Config) -> Result<Self, sqlx::Error> {
+    pub fn with_config(config: &Config) -> Result<Self, sqlx::Error> {
         if config.drop_database {
             print!("removing existing database...");
             std::fs::remove_dir_all(&config.database_url_path)?;

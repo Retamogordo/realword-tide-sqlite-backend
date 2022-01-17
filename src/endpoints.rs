@@ -392,7 +392,7 @@ pub(crate) async fn add_comment(mut req: Request) -> tide::Result {
 }
 
 pub(crate) async fn get_comments(req: Request) -> tide::Result {
-    let mut filter = filters::CommentFilterByValues { 
+    let filter = filters::CommentFilterByValues { 
         id: None,
         article_slug: Some(req.param("slug")?),
         author: None

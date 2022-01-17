@@ -1,62 +1,42 @@
 
-use sqlx::sqlite::{SqlitePool};
-use crate::{endpoints::*, backend};
+//use sqlx::sqlite::{SqlitePool};
+use crate::{config::Config, endpoints::*, backend};
 
 
-#[derive(Debug)]
-pub struct Config {
-    pub database_url_prefix: String,
-    pub database_url_path: String,
-    pub database_file: String,
-    pub secret: String,
-    pub drop_database: bool,
-}
 
-impl Config {
-    pub fn from_env() -> Self {
-        dotenv::dotenv().ok();
-
-        Self {
-            database_url_prefix: std::env::var("DATABASE_URL_PREFIX").expect("No DATABASE_URL_PREFIX environment variable found"),
-            database_url_path: std::env::var("DATABASE_URL_PATH").expect("No DATABASE_URL_PATH environment variable found"),
-            database_file: std::env::var("DATABASE_FILE").expect("No DATABASE_FILE environment variable found"),
-            secret: std::env::var("SECRET").expect("No SECRET environment variable found"),
-            drop_database: 0 != std::env::var("DROP_DATABASE")
-                .ok()
-                .and_then(|s| s.parse::<u32>().ok() )
-                .unwrap_or(0) 
-        }
-    }
-}
-
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct AppState {
     pub server: backend::Server,
 //    pub conn: SqlitePool,
-    pub secret: &'static [u8],
+//    pub secret: &'static [u8],
 }
 
 #[derive(Debug)]
 pub struct App {
-    config: Config,
+//    config: Config,
+//    state: Option<AppState>,
 }
 
 impl App {
-    pub fn from_config(config: Config) -> Self {
-        Self { config }
+/*    
+    pub fn with_config(config: Config) -> Self {
+        let state = AppState { server: backend::Server::with_config(config) };
+        Self { state: Some(state) }
+    } 
+*/
+    pub fn new() -> Self {
+        Self {}
     }
+    
+    pub async fn run(&'static self, config: Config) -> std::result::Result<(), crate::errors::BackendError> {
+ /*       let conn = crate::db::connect(&self.config)
+            .await
+            .expect("failed to connect to sqlite database. ");
+*/
+        let mut state = AppState { server: backend::Server::with_config(config) };
+        state.server.connect().await?;
 
-    pub async fn run(&'static self) -> tide::Result<()> {
-        let conn = crate::db::connect(&self.config)
-        .await
-        .expect("failed to connect to sqlite database. ");
-
-        let mut app = tide::with_state(
-            AppState { 
-                server: backend::Server::with_db_conn(conn).secret(self.config.secret.as_bytes()),
-//                conn, 
-                secret: self.config.secret.as_bytes()
-        } );
+        let mut app = tide::with_state(state);
 
         app.at("/api/users").post(register);
     

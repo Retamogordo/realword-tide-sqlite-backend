@@ -1,7 +1,7 @@
 use tide::prelude::*;
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use crate::models::user::{User};
-use crate::{endpoints::Request, errors};
+use crate::{errors};
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct Claims {
@@ -13,7 +13,7 @@ pub(crate) struct Auth {
 }
 
 impl Auth {
-    pub fn create_token(user: &User, secret: &'static [u8]) -> 
+    pub fn create_token(user: &User, secret: &[u8]) -> 
         Result<String, errors::BackendError> {
         let header = Header::new(Algorithm::HS512);
         match chrono::Utc::now() 
@@ -37,7 +37,7 @@ impl Auth {
             }
     }
 
-    pub fn authenticate(token: &str, secret: &'static [u8]) -> Result<Claims, errors::BackendError> {
+    pub fn authenticate(token: &str, secret: &[u8]) -> Result<Claims, errors::BackendError> {
 /*        let hdr = req.header(http_types::headers::AUTHORIZATION)
             .ok_or(tide::Error::from_str(tide::StatusCode::Unauthorized, "no authorization header in request"))?
             .get(0)
@@ -58,7 +58,7 @@ impl Auth {
         Ok(decoded.claims)
     }
     
-    pub fn authorize(token: &str, secret: &'static [u8], expected_user: &str) 
+    pub fn authorize(token: &str, secret: &[u8], expected_user: &str) 
         -> Result<(), errors::BackendError> {
             let claims = Self::authenticate(token, secret)?;
             if claims.username == expected_user {

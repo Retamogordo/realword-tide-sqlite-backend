@@ -30,6 +30,7 @@ pub enum BackendError {
     NoCommentFound(i32),
     NoCommentAdded,
     UnhandledDBError(String),
+    WebServerConnectionFailure(String),
     UnexpectedError(String),
 }
 
@@ -50,6 +51,8 @@ impl std::fmt::Display for BackendError {
                     write!( f, "{}", format!("Unhandled db error: {}", msg)),
                 Self::UnexpectedError(msg) => 
                     write!( f, "{}", format!("Unexpected server error occured: {}", msg)),
+                Self::WebServerConnectionFailure(msg) =>
+                    write!( f, "{}", format!("Web server connection failed: {}", msg)),
             }
     }
 }
@@ -89,7 +92,7 @@ impl Into<tide::Result> for BackendError {
             Self::AuthenticationFailure => Err(tide::Error::from_str(tide::StatusCode::Unauthorized, self.to_string())),
             Self::Forbidden => Err(tide::Error::from_str(tide::StatusCode::Forbidden, self.to_string())),
             Self::UnexpectedError(_) => Err(tide::Error::from_str(tide::StatusCode::InternalServerError, self.to_string())),
-                
+            Self::WebServerConnectionFailure(_) => unreachable!(),
         }
 //        tide::Error::from_str(status, json!({ "errors":{"body": [ message ] }}))
     }
@@ -118,6 +121,13 @@ impl From<sqlx::Error> for BackendError {
         }
     }
 }
+
+impl From<std::io::Error> for BackendError {
+    fn from(err: std::io::Error) -> Self {
+        BackendError::WebServerConnectionFailure(err.to_string())
+    }
+}
+
 /*
 #[derive(Debug, Serialize)]
 pub(crate) enum AuthenticationError {
