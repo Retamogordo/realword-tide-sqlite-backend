@@ -109,7 +109,8 @@ pub(crate) async fn update_article(conn: &Pool<Sqlite>,
         .await?;
 
     if 0 < query_res.rows_affected() {    
-        let updated_slug = if let Some(slug) = update_article.updated_slug() {
+        let updated_slug = update_article.get_slug();
+        let updated_slug = if let Some(ref slug) = updated_slug {
             slug
         } else { filter.slug };
 

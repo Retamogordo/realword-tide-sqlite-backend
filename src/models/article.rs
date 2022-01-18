@@ -1,4 +1,5 @@
 use tide::prelude::*;
+use slugify::slugify;
 use crate::utils::*;
 use crate::requests::article::*;
 
@@ -23,14 +24,14 @@ pub struct Article {
     pub author: String,
 }
 
-impl From<CreateArticleRequestAuthenicated<'_>> for Article {
-    fn from(create_article: CreateArticleRequestAuthenicated) -> Self {
+impl From<CreateArticleRequestAuthenticated<'_>> for Article {
+    fn from(create_article: CreateArticleRequestAuthenticated) -> Self {
         Self { 
-            slug: create_article.article.slug.clone(), 
-            title: create_article.article.title.clone(),
-            description: create_article.article.description.clone(),
-            body: create_article.article.body.clone(),
-            tag_list: create_article.article.tag_list.as_ref()
+            slug: create_article.article_request.slug.clone(), 
+            title: create_article.article_request.title.clone(),
+            description: create_article.article_request.description.clone(),
+            body: create_article.article_request.body.clone(),
+            tag_list: create_article.article_request.tag_list.as_ref()
                 .and_then(|tags| 
                     Some( tags
                             .iter()
@@ -51,26 +52,54 @@ pub struct UpdateArticle {
     pub title: Option<String>,
     pub description: Option<String>,
     pub body: Option<String>,
-    #[serde(skip_deserializing)]
-    pub slug_from_title: Option<String>,
+//    #[serde(skip_deserializing)]
+//    pub slug_from_title: Option<String>,
 }
 
+impl UpdateArticle {
+    pub fn title(mut self, title: &str) -> Self {
+        self.title = Some(title.to_string());
+        self
+    }
+    pub fn description(mut self, description: &str) -> Self {
+        self.description = Some(description.to_string());
+        self
+    }
+    pub fn body(mut self, body: &str) -> Self {
+        self.body = Some(body.to_string());
+        self
+    }
+    pub fn get_slug(&self) -> Option<String> {
+        self.title.as_ref().and_then(|title| Some(slugify!(title)))
+    }
+}
+/*
 impl UpdateArticle {
     pub fn updated_slug(&self) -> Option<&str> {
         self.slug_from_title.as_deref()
     }
 }
-
+*/
 impl std::fmt::Display for UpdateArticle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.title.as_ref().map(|val| 
-            write!( f, " {}='{}' , {}='{}'", "title", val, "slug", self.slug_from_title.as_ref().unwrap()) ).unwrap_or(Ok(()))?;
-        self.description.as_ref().map(|val| write!( f, " {}='{}' ,", "description", val) ).unwrap_or(Ok(()))?;
-        self.body.as_ref().map(|val| write!( f, " {}='{}' ,", "body", val) ).unwrap_or(Ok(()))?;
+//            write!( f, " {}='{}' , {}='{}'", "title", val, "slug", self.slug_from_title.as_ref().unwrap()) ).unwrap_or(Ok(()))?;
+            write!( f, " {}='{}', {}='{}', ", "title", val, "slug", slugify!(val)) ).unwrap_or(Ok(()))?;
+        self.description.as_ref().map(|val| write!( f, " {}='{}', ", "description", val) ).unwrap_or(Ok(()))?;
+        self.body.as_ref().map(|val| write!( f, " {}='{}', ", "body", val) ).unwrap_or(Ok(()))?;
         write!( f, " id=id ")
     }
 }
 
+impl Default for UpdateArticle {
+    fn default() -> Self {
+        Self {
+            title: None,
+            description: None,
+            body: None,
+        }
+    }
+}
 
 #[derive(Debug, Serialize, Clone)]
 pub struct ArticleResponse {

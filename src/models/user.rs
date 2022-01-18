@@ -9,7 +9,9 @@ pub struct User {
     pub token: Option<String>,    
     pub username: String,    
     pub bio: String,    
-    pub image: Option<String>,  
+    pub image: Option<String>, 
+    #[serde(skip_serializing)]
+    password: String,
 }
 
 impl From<requests::user::UserReg> for User {
@@ -17,6 +19,7 @@ impl From<requests::user::UserReg> for User {
         Self {
             username: user_reg.username,
             email: user_reg.email,
+            password: user_reg.password,
             token: None,
             bio: "".to_string(), 
             image: None,
@@ -32,6 +35,26 @@ impl User {
 #[derive(Debug, Serialize)]
 pub(crate) struct UserWrapped {
     pub user: User,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[derive(sqlx::FromRow)]
+pub struct Profile {
+    pub username: String,    
+    pub bio: Option<String>,    
+    pub image: Option<String>,  
+    pub following: bool,
+}
+
+impl Profile {
+    pub(crate) fn wrap(self) -> ProfileWrapped {
+        ProfileWrapped { profile: self }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct ProfileWrapped {
+    pub profile: Profile,
 }
 
 #[derive(Debug)]
@@ -60,8 +83,8 @@ impl std::fmt::Display for UserUpdate<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.username.as_ref().map(|val| 
             write!( f, " {}='{}' ", "username", val) ).unwrap_or(Ok(()))?;
-        self.email.as_ref().map(|val| write!( f, " {}='{}' ,", "email", val) ).unwrap_or(Ok(()))?;
-        self.password.as_ref().map(|val| write!( f, " {}='{}' ,", "password", val) ).unwrap_or(Ok(()))?;
+        self.email.as_ref().map(|val| write!( f, " {}='{}', ", "email", val) ).unwrap_or(Ok(()))?;
+        self.password.as_ref().map(|val| write!( f, " {}='{}', ", "password", val) ).unwrap_or(Ok(()))?;
         write!( f, " id=id ")
     }
 }
@@ -85,8 +108,8 @@ pub(crate) struct ProfileUpdate<'a> {
 
 impl std::fmt::Display for ProfileUpdate<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.bio.as_ref().map(|val| write!( f, " {}='{}' ,", "bio", val) ).unwrap_or(Ok(()))?;
-        self.image.as_ref().map(|val| write!( f, " {}='{}' ,", "image", val) ).unwrap_or(Ok(()))?;
+        self.bio.as_ref().map(|val| write!( f, " {}='{}', ", "bio", val) ).unwrap_or(Ok(()))?;
+        self.image.as_ref().map(|val| write!( f, " {}='{}', ", "image", val) ).unwrap_or(Ok(()))?;
         write!( f, " user_id=user_id ")
     }
 }
@@ -101,22 +124,3 @@ impl Default for ProfileUpdate<'_> {
 }
 
 
-#[derive(Debug, Serialize, Clone)]
-#[derive(sqlx::FromRow)]
-pub struct Profile {
-    pub username: String,    
-    pub bio: Option<String>,    
-    pub image: Option<String>,  
-    pub following: bool,
-}
-
-impl Profile {
-    pub(crate) fn wrap(self) -> ProfileWrapped {
-        ProfileWrapped { profile: self }
-    }
-}
-
-#[derive(Debug, Serialize)]
-pub(crate) struct ProfileWrapped {
-    pub profile: Profile,
-}

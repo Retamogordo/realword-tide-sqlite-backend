@@ -1,39 +1,47 @@
 use tide::prelude::*;
+use crate::requests::{article::*, user::*};
 
 pub trait Filter: std::fmt::Display + Default {}
 
-#[derive(Deserialize)]
-#[serde(default)]
-pub struct UserFilter {
-    pub username: Option<String>,
-    pub email: Option<String>,
+//#[derive(Deserialize)]
+//#[serde(default)]
+pub(crate) struct UserFilter<'a> {
+    pub username: Option<&'a str>,
+    pub email: Option<&'a str>,
+    pub password: Option<&'a str>,
 }
 
-impl UserFilter {
-    pub fn username(mut self, username: &str) -> Self {
-        self.username = Some(username.to_string());
+impl<'a> UserFilter<'a> {
+    pub fn username(mut self, username: &'a str) -> Self {
+        self.username = Some(username);
         self
     } 
-    pub fn email(mut self, email: &str) -> Self {
-        self.email = Some(email.to_string());
+    pub fn email(mut self, email: &'a str) -> Self {
+        self.email = Some(email);
+        self
+    } 
+    pub fn password(mut self, password: &'a str) -> Self {
+        self.password = Some(password);
         self
     } 
 }
-impl Filter for UserFilter {}
+impl Filter for UserFilter<'_> {}
 
-impl Default for UserFilter {
+impl Default for UserFilter <'_>{
     fn default() -> Self {
         Self { 
             username: None,
             email: None,
+            password: None,
         }
     }
 }
 
-impl std::fmt::Display for UserFilter {
+impl std::fmt::Display for UserFilter<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.username.as_ref().map(|val| write!( f, " {}='{}' AND", "users.username", val) ).unwrap_or(Ok(()))?;
         self.email.as_ref().map(|val| write!( f, " {}='{}' AND", "users.email", val) ).unwrap_or(Ok(()))?;
+        self.password.as_ref().map(|val| write!( f, " {}='{}' AND", "users.password", val) ).unwrap_or(Ok(()))?;
         write!( f, " 1=1")
     }
 }
@@ -140,7 +148,7 @@ impl std::fmt::Display for ArticleFilterByValues {
 
 #[derive(Deserialize, Default)]
 #[serde(default)]
-pub struct ArticleFilterFeed<'a> {
+pub(crate) struct ArticleFilterFeed<'a> {
     pub follower: &'a str,
 }
 
@@ -156,7 +164,7 @@ impl std::fmt::Display for ArticleFilterFeed<'_> {
 
 
 #[derive(Default)]
-pub struct UpdateArticleFilter<'a> {
+pub(crate) struct UpdateArticleFilter<'a> {
     pub slug: &'a str,
     pub author: &'a str,
 }
@@ -218,6 +226,16 @@ impl Default for CommentFilterByValues<'_> {
             id: None,
             author: None,
             article_slug: None,
+        }
+    }
+}
+
+impl<'a> From<&'a DeleteCommentRequestAuthenticated<'_>> for CommentFilterByValues<'a> {
+    fn from(req: &'a DeleteCommentRequestAuthenticated) -> Self {
+        Self {
+            id: Some(req.article_request.id),
+            article_slug: Some(req.article_request.article_slug),
+            author: Some(&req.author),
         }
     }
 }

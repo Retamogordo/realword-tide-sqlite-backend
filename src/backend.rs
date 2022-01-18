@@ -6,6 +6,8 @@ use crate::{config::Config,
     requests,
     errors::*, db, auth, filters
 };
+
+use crate::requests::IntoAuthenticatedRequest;
 /*
 #[async_trait]
 pub trait Service {
@@ -63,8 +65,14 @@ impl Server {
         Ok(user)
     }
 
-    pub async fn login_user(&self, user_by: filters::UserFilter) -> Result<User, BackendError> {
-        let mut user = db::user::get_user(self.conn.as_ref().unwrap(), user_by).await?;
+    pub async fn login_user(&self, login_req: requests::user::LoginRequest) -> Result<User, BackendError> {
+        let user_by = filters::UserFilter::default()
+            .email(&login_req.email)
+            .password(&login_req.password);
+        let mut user = db::user::get_user(self.conn.as_ref().unwrap(), user_by)
+            .await
+            .map_err(|err| BackendError::IncorrectUsernameOrPassword(login_req.email))
+            ?;
 
         user.token = Some(auth::Auth::create_token(&user, self.secret())?);
 
@@ -117,16 +125,21 @@ impl Server {
         db::user::unfollow(self.conn.as_ref().unwrap(), &claims.username, &celeb_name).await
     }
 
-    pub async fn create_article(&self, token: &str, article: &requests::article::CreateArticleRequest) -> Result<ArticleResponse, BackendError> {
+    pub async fn create_article(&self, token: &str, article_request: &requests::article::CreateArticleRequest) -> Result<ArticleResponse, BackendError> {
         let claims = auth::Auth::authenticate(token, self.secret())?;
-        let create_article = requests::article::CreateArticleRequestAuthenicated { article, author: &claims.username };
+        let create_article = requests::article::CreateArticleRequestAuthenticated { 
+            article_request, 
+            author: &claims.username 
+        };
         let article = Article::from(create_article);
 
         db::article::create_article(self.conn.as_ref().unwrap(), article).await
     }
 
-    pub async fn get_article(&self, article_by: filters::ArticleFilterByValues) -> Result<ArticleResponse, BackendError> {
-        db::article::get_one(self.conn.as_ref().unwrap(), article_by).await
+    pub async fn get_article_by_slug(&self, slug: &str) -> Result<ArticleResponse, BackendError> {
+        let filter = filters::ArticleFilterByValues::default().slug(slug.to_string());
+
+        db::article::get_one(self.conn.as_ref().unwrap(), filter).await
     }
 
     pub async fn get_articles(&self, 
@@ -259,9 +272,9 @@ impl Server {
         comment: AddCommentRequest
     ) -> Result<CommentResponse, BackendError> {
         let claims = auth::Auth::authenticate(token, self.secret())?;
-        let author = &claims.username;
+        let comment_author = &claims.username;
 
-        db::article::add_comment(self.conn.as_ref().unwrap(), article_filter, author, comment).await
+        db::article::add_comment(self.conn.as_ref().unwrap(), article_filter, comment_author, comment).await
     }
 
     pub async fn get_comments(&self, 
@@ -290,45 +303,44 @@ impl Server {
 
     pub async fn delete_comment(&self, 
         token: &str, 
-        delete_by: filters::CommentFilterByValues<'_>,
+        delete_req: requests::article::DeleteCommentRequest<'_>,
     ) -> Result<(), BackendError> {
-        let claims = auth::Auth::authenticate(token, self.secret())?;
-        let author = &claims.username;
+ 
+        let id = delete_req.id;
 
-        let delete_by = delete_by.author(author);
-        
-        let id_opt = delete_by.id;
+        let delete_req_auth = &delete_req.authenticate(token, self.secret())?;
+        let filter = filters::CommentFilterByValues::from(delete_req_auth);
 
-        let query_res = db::article::delete_comments(self.conn.as_ref().unwrap(), delete_by).await?;
+        let query_res = db::article::delete_comments(self.conn.as_ref().unwrap(), filter).await?;
         // if no comment has been deleted, check if user is authorized to do so    
         if 0 == query_res.rows_affected() {
 
-            if let Some(id) = id_opt {
-                let filter = filters::CommentFilterByValues::default().id(id);
+ //           if let Some(id) = id_opt {
+            let filter = filters::CommentFilterByValues::default().id(id);
 
-                let comments = db::article::get_comments(self.conn.as_ref().unwrap(), 
-                                                        filter, 
-                                                        filters::OrderByFilter::default(), 
-                                                        filters::LimitOffsetFilter::default().limit(1))
-                    .await; 
+            let comments = db::article::get_comments(self.conn.as_ref().unwrap(), 
+                                                    filter, 
+                                                    filters::OrderByFilter::default(), 
+                                                    filters::LimitOffsetFilter::default().limit(1))
+                .await; 
+
+            match comments {
+                Ok(comments) =>
+                    if let Some(comment) = comments.iter().next() {
     
-                match comments {
-                    Ok(comments) =>
-                        if let Some(comment) = comments.iter().next() {
-        
-                            auth::Auth::authorize(token, self.secret(), &comment.comment.author)?;
-                            
-                            Err(BackendError::UnexpectedError(
-                                "could not delete comment despite user has been authorized to, probably due to a bug".to_string()))
-        
-                        } else {
-                            Err(BackendError::NoCommentFound(id))
-                        },
-                    Err(err) => Err(err)
-                }
-            } else {
-                Err(BackendError::UnexpectedError("tried to delete comment without id".to_string()))
-            } 
+                        auth::Auth::authorize(token, self.secret(), &comment.comment.author)?;
+                        
+                        Err(BackendError::UnexpectedError(
+                            "could not delete comment despite user has been authorized to, probably due to a bug".to_string()))
+    
+                    } else {
+                        Err(BackendError::NoCommentFound(id))
+                    },
+                Err(err) => Err(err)
+            }
+//         } else {
+    //            Err(BackendError::UnexpectedError("tried to delete comment without id".to_string()))
+      //      } 
     
         } else {
             Ok(())

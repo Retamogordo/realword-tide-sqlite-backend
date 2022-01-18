@@ -21,7 +21,7 @@ pub(crate) async fn register_user(conn: &Pool<Sqlite>,
 }
 
 pub(crate) async fn get_user(conn: &Pool<Sqlite>,
-    filter: filters::UserFilter,
+    filter: filters::UserFilter<'_>,
 ) -> Result<user::User, crate::errors::BackendError>  {
 
     let statement = format!("\
@@ -53,11 +53,12 @@ pub(crate) async fn update_user(conn: &Pool<Sqlite>,
     
 
     if 0 < query_res.rows_affected() {    
-        let filter = filters::UserFilter{
-            username: updated_user.username.map(str::to_string), 
-            email: updated_user.email.map(str::to_string)
+        let filter = filters::UserFilter {
+            username: updated_user.username.or(filter.username),
+            email: updated_user.email.or(filter.email),
+            password: None,
         };
-
+        
         get_user(conn, filter).await
     } else { 
         Err(errors::BackendError::NoUserFound(filter.to_string()))

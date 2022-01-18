@@ -44,7 +44,7 @@ pub(crate) struct UserUpdateWrapped {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct LoginRequest {
+pub struct LoginRequest {
     pub email: String,
     pub password: String,
 }

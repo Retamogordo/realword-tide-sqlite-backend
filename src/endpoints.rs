@@ -19,9 +19,8 @@ pub(crate) async fn register(mut req: Request) -> tide::Result {
 pub(crate) async fn login(mut req: Request) -> tide::Result {
     println!("in login");
     let login_req: LoginRequestWrapped = req.body_json().await?;
-    let filter = filters::UserFilter::default().email(&login_req.user.email);
 
-    req.state().server.login_user(filter).await
+    req.state().server.login_user(login_req.user).await
         .and_then(|user| 
             Ok(json!(user.wrap()).into())
         )
@@ -174,9 +173,8 @@ pub(crate) async fn create_article(mut req: Request) -> tide::Result {
 
 pub(crate) async fn get_article(req: Request) -> tide::Result {
     let slug = req.param("slug")?;
-    let filter = filters::ArticleFilterByValues::default().slug(slug.to_string());
 
-    req.state().server.get_article(filter).await
+    req.state().server.get_article_by_slug(slug).await
         .and_then(|article_response| 
             Ok(json!(article_response.wrap()).into())
         )
@@ -370,27 +368,6 @@ pub(crate) async fn feed_articles(req: Request) -> tide::Result {
         .or_else(|err| err.into())*/
 }
 
-pub(crate) async fn add_comment(mut req: Request) -> tide::Result {
-    let wrapped: AddCommentRequestWrapped = req.body_json().await?;
-    let token = crate::utils::token_from_request(&req)?;
-    let slug = req.param("slug")?;
-
-    let filter = filters::ArticleFilterByValues::default().slug(slug.to_string());
-
-    req.state().server.add_comment(token, filter, wrapped.comment).await
-        .and_then(|comment| 
-            Ok(json!(comment.wrap()).into())
-        )
-        .or_else(|err| err.into())
-
-/*    db::article::add_comment(&req.state().server.conn, filter, author, &wrapped.comment)
-        .await 
-        .and_then(|comment|
-          Ok(json!(comment.wrap()).into())
-        )
-        .or_else(|err| err.into())*/
-}
-
 pub(crate) async fn get_comments(req: Request) -> tide::Result {
     let filter = filters::CommentFilterByValues { 
         id: None,
@@ -405,33 +382,37 @@ pub(crate) async fn get_comments(req: Request) -> tide::Result {
             Ok(json!(comments).into())
         )
         .or_else(|err| err.into())
+}
 
-/*
-    let token_opt = crate::utils::token_from_request(&req).ok();
-    let secret = req.state().secret;
+pub(crate) async fn add_comment(mut req: Request) -> tide::Result {
+    let wrapped: AddCommentRequestWrapped = req.body_json().await?;
+    let token = crate::utils::token_from_request(&req)?;
+    let article_slug = req.param("slug")?;
 
-    let tmp =  auth::Auth::authenticate(token, secret).ok().and_then(|claims| Some(claims.username));
-    // author is an Option, can be None
-    filter.author = tmp.as_deref();
+    let filter = filters::ArticleFilterByValues::default().slug(article_slug.to_string());
 
-    let order_by = filters::OrderByFilter::Descending("id");
-    let limit_offset: filters::LimitOffsetFilter = filters::LimitOffsetFilter::default();
-
-    db::article::get_comments(&req.state().server.conn, filter, order_by, limit_offset)
-        .await 
-        .and_then(|comments|
-          Ok(json!(MultipleCommentResponse { comments }).into())
+/*    let add_comment_req = crate::requests::article::AddCommentRequest { 
+        article_slug
+    };
+*/
+    req.state().server.add_comment(token, filter, wrapped.comment).await
+        .and_then(|comment| 
+            Ok(json!(comment.wrap()).into())
         )
         .or_else(|err| err.into())
-        */
 }
+
 
 pub(crate) async fn delete_comment(req: Request) -> tide::Result {
     let token = crate::utils::token_from_request(&req)?;
     let id = req.param("id")?.parse::<i32>()?;
+    let article_slug = req.param("slug")?;
 
-    let filter = filters::CommentFilterByValues::default().id(id);
-    req.state().server.delete_comment(token, filter).await
+    let delete_comment_req = crate::requests::article::DeleteCommentRequest { 
+        id,
+        article_slug
+    };
+    req.state().server.delete_comment(token, delete_comment_req).await
         .and_then(|()| 
             Ok(json!(()).into())
         )

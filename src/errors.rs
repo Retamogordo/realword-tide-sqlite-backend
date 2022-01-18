@@ -24,6 +24,7 @@ pub enum BackendError {
     TokenCreationFailure(String),
     ValidationError(String),
     AuthenticationFailure,
+    IncorrectUsernameOrPassword(String),
     Forbidden,
     NoUserFound(String),
     NoArticleFound,
@@ -39,6 +40,7 @@ impl std::fmt::Display for BackendError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { 
             match self {
                 Self::UsernameOrEmailExists => write!( f, "{}", "username or email is already taken"),
+                Self::IncorrectUsernameOrPassword(email) => write!( f, "{}", format!("incorrect credentials for {}", email)),
                 Self::TokenCreationFailure(message) => write!( f, "{}", format!("JWT not created, reason: {}", message)),
                 Self::ValidationError(message) => write!( f, "{}", message),
                 Self::AuthenticationFailure => write!( f, "{}", "authentication failure"),
@@ -73,6 +75,8 @@ impl Into<tide::Result> for BackendError {
             Self::ValidationError(_)
             |
             Self::UsernameOrEmailExists 
+            |
+            Self::IncorrectUsernameOrPassword(_)
             |
             Self::NoUserFound(_)  
             |
