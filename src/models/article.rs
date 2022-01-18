@@ -1,53 +1,76 @@
 use tide::prelude::*;
 use crate::utils::*;
-
-#[derive(Debug, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")] 
-pub struct CreateArticleRequest { 
-    #[serde(skip_deserializing)]
-    pub slug: String,
-    pub title: String,
-    pub description: Option<String>,
-    pub body: String,
-    pub tag_list: Option<Vec<String>>,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub(crate) struct CreateArticleRequestWrapped { 
-    #[serde(deserialize_with = "slugify_article_on_create")]    
-    pub article: CreateArticleRequest,
-}
-
-fn slugify_article_on_create<'de, D>(deserializer: D) -> std::result::Result<CreateArticleRequest, D::Error>
-where
-    D: serde::Deserializer<'de>, {
-    use slugify::slugify;
-    let mut req: CreateArticleRequest = serde::Deserialize::deserialize(deserializer)?;
-    req.slug = slugify!(&req.title);
-    Ok(req)
-}
-
+use crate::requests::article::*;
 
 #[derive(sqlx::FromRow)]
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 #[sqlx(rename_all = "camelCase")]
 pub struct Article { 
-    pub slug: Option<String>,
+    pub slug: String,
     pub title: String,
     pub description: Option<String>,
     pub body: String,
     #[serde(serialize_with = "transform_string_to_vec")]    
     pub tag_list: Option<String>,
-    #[serde(serialize_with = "transform_datetime")]    
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    #[serde(serialize_with = "transform_datetime")]    
-    pub updated_at: chrono::DateTime<chrono::Utc>,
+    #[serde(serialize_with = "transform_datetime_option")]    
+    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(serialize_with = "transform_datetime_option")]    
+    pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
     pub favorited: bool,
     pub favorites_count: u32,
     #[serde(skip_serializing)]
     pub author: String,
 }
+
+impl From<CreateArticleRequestAuthenicated<'_>> for Article {
+    fn from(create_article: CreateArticleRequestAuthenicated) -> Self {
+        Self { 
+            slug: create_article.article.slug.clone(), 
+            title: create_article.article.title.clone(),
+            description: create_article.article.description.clone(),
+            body: create_article.article.body.clone(),
+            tag_list: create_article.article.tag_list.as_ref()
+                .and_then(|tags| 
+                    Some( tags
+                            .iter()
+                            .fold("".to_string(), |s, tag| format!("{}{},", s, tag) ) )
+                ),
+            created_at: None,
+            updated_at: None,
+            favorited: false,
+            favorites_count: 0,
+            author: create_article.author.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")] 
+pub struct UpdateArticle { 
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub body: Option<String>,
+    #[serde(skip_deserializing)]
+    pub slug_from_title: Option<String>,
+}
+
+impl UpdateArticle {
+    pub fn updated_slug(&self) -> Option<&str> {
+        self.slug_from_title.as_deref()
+    }
+}
+
+impl std::fmt::Display for UpdateArticle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.title.as_ref().map(|val| 
+            write!( f, " {}='{}' , {}='{}'", "title", val, "slug", self.slug_from_title.as_ref().unwrap()) ).unwrap_or(Ok(()))?;
+        self.description.as_ref().map(|val| write!( f, " {}='{}' ,", "description", val) ).unwrap_or(Ok(()))?;
+        self.body.as_ref().map(|val| write!( f, " {}='{}' ,", "body", val) ).unwrap_or(Ok(()))?;
+        write!( f, " id=id ")
+    }
+}
+
 
 #[derive(Debug, Serialize, Clone)]
 pub struct ArticleResponse {
@@ -84,49 +107,6 @@ impl MultipleArticleResponse {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")] 
-pub struct UpdateArticle { 
-    pub title: Option<String>,
-    pub description: Option<String>,
-    pub body: Option<String>,
-    #[serde(skip_deserializing)]
-    pub slug_from_title: Option<String>,
-}
-
-impl UpdateArticle {
-    pub fn updated_slug(&self) -> Option<&str> {
-        self.slug_from_title.as_deref()
-    }
-}
-
-impl std::fmt::Display for UpdateArticle {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.title.as_ref().map(|val| 
-            write!( f, " {}='{}' , {}='{}'", "title", val, "slug", self.slug_from_title.as_ref().unwrap()) ).unwrap_or(Ok(()))?;
-        self.description.as_ref().map(|val| write!( f, " {}='{}' ,", "description", val) ).unwrap_or(Ok(()))?;
-        self.body.as_ref().map(|val| write!( f, " {}='{}' ,", "body", val) ).unwrap_or(Ok(()))?;
-        write!( f, " id=id ")
-    }
-}
-
-
-#[derive(Debug, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")] 
-pub(crate) struct UpdateArticleRequest {
-    #[serde(deserialize_with = "slugify_article_on_update")]    
-    pub article: crate::models::article::UpdateArticle,
-}
-
-fn slugify_article_on_update<'de, D>(deserializer: D) 
-    -> std::result::Result<crate::models::article::UpdateArticle, D::Error>
-where
-    D: serde::Deserializer<'de>, {
-    use slugify::slugify;
-    let mut article: crate::models::article::UpdateArticle = serde::Deserialize::deserialize(deserializer)?;
-    article.slug_from_title = article.title.as_ref().and_then(|title| Some(slugify!(title)));
-    Ok(article)
-}
 
 #[derive(sqlx::FromRow)]
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -175,6 +155,11 @@ impl MultipleCommentResponse {
     }
 }
 
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TagList {
+    pub tags: Vec<String>,
+}
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")] 
@@ -185,10 +170,4 @@ pub struct AddCommentRequest {
 #[derive(Debug, Deserialize, Clone)]
 pub(crate) struct AddCommentRequestWrapped { 
     pub comment: AddCommentRequest,
-}
-
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct TagList {
-    pub tags: Vec<String>,
 }

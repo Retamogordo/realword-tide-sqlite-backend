@@ -1,9 +1,10 @@
 mod db;
 mod auth;
-mod filters;
-mod models;
 mod utils;
 mod endpoints;
+pub mod requests;
+pub mod filters;
+pub mod models;
 pub mod errors;
 pub mod backend;
 pub mod app;

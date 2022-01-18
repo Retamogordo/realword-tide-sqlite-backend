@@ -3,26 +3,18 @@ use sqlx::sqlite::{Sqlite, SqliteQueryResult};
 use crate::{models::article, filters, errors};
 
 pub(crate) async fn create_article(conn: &Pool<Sqlite>,
-    author_name: &str,
-    article: &article::CreateArticleRequest,
+    article: article::Article,
 ) -> Result<article::ArticleResponse, errors::BackendError>  {
     sqlx::query(
         "INSERT INTO articles (author, slug, title, description, body, tagList, createdAt, updatedAt)
         VALUES( ?,	?, ?, ?, ?, ?, datetime('now'), datetime('now'));
         ")
-        .bind(&author_name)
+        .bind(&article.author)
         .bind(&article.slug)
         .bind(&article.title)
         .bind(&article.description)
         .bind(&article.body)
-        .bind(
-            &article.tag_list.as_ref()
-                .and_then(|tags| 
-                    Some( tags
-                            .iter()
-                            .fold("".to_string(), |s, tag| format!("{}{},", s, tag) ) )
-                )
-        )
+        .bind(&article.tag_list)
         .execute(conn)    
         .await?;
 
@@ -39,10 +31,13 @@ fn get_article_clause<F: crate::filters::Filter>(
 ) -> String  {
     format!(" \
         SELECT *, (favoritesCount>0) as favorited FROM \
-            (SELECT articles.id as id, slug, title, body, description, tagList, createdAt, updatedAt, author,	COUNT(favorite_articles.id) as favoritesCount FROM articles \
-            LEFT JOIN favorite_articles ON articles.id = favorite_articles.id WHERE {} \
-            {} {}) \
-        WHERE id IS NOT NULL", 
+            (SELECT articles.id as id, slug, title, body, description, tagList, \
+                createdAt, updatedAt, author, \
+                COUNT(favorite_articles.id) as favoritesCount FROM articles \
+            LEFT JOIN favorite_articles ON articles.id = favorite_articles.id \
+            WHERE {} \
+            GROUP BY articles.id
+            {} {})", 
         filter, order_by, limit_offset
     )
 }

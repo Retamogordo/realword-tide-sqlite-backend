@@ -26,6 +26,14 @@ where
         .serialize(serializer)
 }
 
+pub(crate) fn transform_datetime_option<S>(dt: &Option<chrono::DateTime<chrono::Utc>>, 
+    serializer: S) -> std::result::Result<S::Ok, S::Error>
+where
+    S: serde::Serializer, {
+        dt.and_then(|dt| dt.checked_add_signed(chrono::Duration::milliseconds(42)))
+        .serialize(serializer)
+}
+
 pub(crate) fn token_from_request(req: &Request) -> Result<&str, tide::Error> {
     let hdr = req.header(http_types::headers::AUTHORIZATION)
         .ok_or(tide::Error::from_str(tide::StatusCode::Unauthorized, "no authorization header in request"))?

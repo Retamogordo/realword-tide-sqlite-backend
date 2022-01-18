@@ -1,7 +1,11 @@
 use sqlx::sqlite::{SqlitePool};
 use validator::{Validate};
 
-use crate::{config::Config, models::{user::*, article::*}, errors::*, db, auth, filters};
+use crate::{config::Config, 
+    models::{user::*, article::*}, 
+    requests,
+    errors::*, db, auth, filters
+};
 /*
 #[async_trait]
 pub trait Service {
@@ -48,12 +52,13 @@ impl Server {
         self.config.secret.as_bytes()
     }
 
-    pub async fn register_user(&self, user_reg: UserReg) -> Result<User, BackendError> {
+    pub async fn register_user(&self, user_reg: requests::user::UserReg) -> Result<User, BackendError> {
         user_reg.validate()?;
 
         db::user::register_user(self.conn.as_ref().unwrap(), &user_reg).await?;
     
         let mut user: User = user_reg.into();
+        // login by creating token
         user.token = Some(auth::Auth::create_token(&user, self.secret())?);
         Ok(user)
     }
@@ -90,9 +95,10 @@ impl Server {
         res*/
     }
 
-    pub async fn update_user(&self, token: &str, update_user: UserUpdate) -> Result<User, BackendError> {
+    pub async fn update_user(&self, token: &str, update_user_req: requests::user::UserUpdateRequest) -> Result<User, BackendError> {
         let claims = auth::Auth::authenticate(token, self.secret())?;
         let filter = filters::UpdateUserFilter::default().username(&claims.username);
+        let update_user = UserUpdate::from(&update_user_req);
 
         let mut user = db::user::update_user(self.conn.as_ref().unwrap(), &update_user, filter).await?;
         user.token = Some(token.to_string());
@@ -111,10 +117,12 @@ impl Server {
         db::user::unfollow(self.conn.as_ref().unwrap(), &claims.username, &celeb_name).await
     }
 
-    pub async fn create_article(&self, token: &str, article: &CreateArticleRequest) -> Result<ArticleResponse, BackendError> {
+    pub async fn create_article(&self, token: &str, article: &requests::article::CreateArticleRequest) -> Result<ArticleResponse, BackendError> {
         let claims = auth::Auth::authenticate(token, self.secret())?;
+        let create_article = requests::article::CreateArticleRequestAuthenicated { article, author: &claims.username };
+        let article = Article::from(create_article);
 
-        db::article::create_article(self.conn.as_ref().unwrap(), &claims.username, article).await
+        db::article::create_article(self.conn.as_ref().unwrap(), article).await
     }
 
     pub async fn get_article(&self, article_by: filters::ArticleFilterByValues) -> Result<ArticleResponse, BackendError> {

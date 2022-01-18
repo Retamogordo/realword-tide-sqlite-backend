@@ -1,9 +1,9 @@
 use sqlx::{Pool};
 use sqlx::sqlite::{Sqlite};
-use crate::{models::user, filters, errors};
+use crate::{models::user, requests, filters, errors};
 
 pub(crate) async fn register_user(conn: &Pool<Sqlite>,
-    user: &user::UserReg,
+    user: &requests::user::UserReg,
 ) -> Result<(), crate::errors::BackendError>  {
     sqlx::query(
             "INSERT INTO users (username, email, password)
@@ -38,22 +38,26 @@ pub(crate) async fn get_user(conn: &Pool<Sqlite>,
 }
 
 pub(crate) async fn update_user(conn: &Pool<Sqlite>,
-    updated_user: &user::UserUpdate,
+    updated_user: &user::UserUpdate<'_>,
     filter: filters::UpdateUserFilter<'_>
 ) -> Result<user::User, crate::errors::BackendError>  {
-
-    let statement = format!("UPDATE users SET {} WHERE {} ", updated_user, filter);
+    
+    let statement = format!(
+        "UPDATE profiles SET {} WHERE user_id=(SELECT id FROM users WHERE {});\n
+         UPDATE users SET {} WHERE {} ", 
+        updated_user.profile, filter, updated_user, filter);
 
     let query_res = sqlx::query(&statement)
         .execute(conn)    
         .await?;
     
-    let filter = filters::UserFilter{
-        username: updated_user.username.clone(), 
-        email: updated_user.email.clone()
-    };
 
     if 0 < query_res.rows_affected() {    
+        let filter = filters::UserFilter{
+            username: updated_user.username.map(str::to_string), 
+            email: updated_user.email.map(str::to_string)
+        };
+
         get_user(conn, filter).await
     } else { 
         Err(errors::BackendError::NoUserFound(filter.to_string()))

@@ -1,49 +1,8 @@
+
 use tide::prelude::*;
-//use sqlx::prelude::*;
-use validator::{Validate};
+use crate::requests;
 
-#[derive(Debug, Deserialize, Validate)]
-pub struct UserReg {
-    pub username: String,
-    #[validate(email)]
-    pub email: String,
-    pub password: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct UserRegWrapped {
-    pub user: UserReg,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")] 
-pub struct UserUpdate {
-    pub username: Option<String>,
-    pub email: Option<String>,
-    pub password: Option<String>,
-    pub bio: Option<String>,
-    pub image: Option<String>,
-}
-
-impl std::fmt::Display for UserUpdate {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.username.as_ref().map(|val| 
-            write!( f, " {}='{}' ", "username", val) ).unwrap_or(Ok(()))?;
-        self.email.as_ref().map(|val| write!( f, " {}='{}' ,", "email", val) ).unwrap_or(Ok(()))?;
-        self.password.as_ref().map(|val| write!( f, " {}='{}' ,", "password", val) ).unwrap_or(Ok(()))?;
-        self.bio.as_ref().map(|val| write!( f, " {}='{}' ,", "bio", val) ).unwrap_or(Ok(()))?;
-        self.image.as_ref().map(|val| write!( f, " {}='{}' ,", "image", val) ).unwrap_or(Ok(()))?;
-        write!( f, " id=id ")
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct UserUpdateWrapped {
-//    user: String,
-    pub user: UserUpdate,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Clone)]
 #[derive(sqlx::FromRow)]
 pub struct User {
     pub email: String,    
@@ -53,8 +12,8 @@ pub struct User {
     pub image: Option<String>,  
 }
 
-impl From<UserReg> for User {
-    fn from(user_reg: UserReg) -> Self {
+impl From<requests::user::UserReg> for User {
+    fn from(user_reg: requests::user::UserReg) -> Self {
         Self {
             username: user_reg.username,
             email: user_reg.email,
@@ -75,13 +34,80 @@ pub(crate) struct UserWrapped {
     pub user: User,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug)]
+pub(crate) struct UserUpdate<'a> {
+    pub username: Option<&'a str>,
+    pub email: Option<&'a str>,
+    pub password: Option<&'a str>,
+    pub profile: ProfileUpdate<'a>,
+}
+
+impl<'a> From<&'a requests::user::UserUpdateRequest> for UserUpdate<'a> {
+    fn from(req: &'a requests::user::UserUpdateRequest) -> Self {
+        Self {
+            username: req.username.as_deref(),
+            email: req.email.as_deref(),
+            password: req.password.as_deref(),
+            profile: ProfileUpdate { 
+                bio: req.bio.as_deref(),
+                image: req.image.as_deref(),
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for UserUpdate<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.username.as_ref().map(|val| 
+            write!( f, " {}='{}' ", "username", val) ).unwrap_or(Ok(()))?;
+        self.email.as_ref().map(|val| write!( f, " {}='{}' ,", "email", val) ).unwrap_or(Ok(()))?;
+        self.password.as_ref().map(|val| write!( f, " {}='{}' ,", "password", val) ).unwrap_or(Ok(()))?;
+        write!( f, " id=id ")
+    }
+}
+
+impl Default for UserUpdate<'_> {
+    fn default() -> Self {
+        Self { 
+            username: None,
+            email: None,
+            password: None,
+            profile: ProfileUpdate::default(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct ProfileUpdate<'a> {
+    pub bio: Option<&'a str>,
+    pub image: Option<&'a str>,
+}
+
+impl std::fmt::Display for ProfileUpdate<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.bio.as_ref().map(|val| write!( f, " {}='{}' ,", "bio", val) ).unwrap_or(Ok(()))?;
+        self.image.as_ref().map(|val| write!( f, " {}='{}' ,", "image", val) ).unwrap_or(Ok(()))?;
+        write!( f, " user_id=user_id ")
+    }
+}
+
+impl Default for ProfileUpdate<'_> {
+    fn default() -> Self {
+        Self { 
+            bio: None,
+            image: None,
+        }
+    }
+}
+
+
+#[derive(Debug, Serialize, Clone)]
 #[derive(sqlx::FromRow)]
 pub struct Profile {
-    username: String,    
-    bio: String,    
-    image: Option<String>,  
-    following: bool,
+    pub username: String,    
+    pub bio: Option<String>,    
+    pub image: Option<String>,  
+    pub following: bool,
 }
 
 impl Profile {
@@ -93,22 +119,4 @@ impl Profile {
 #[derive(Debug, Serialize)]
 pub(crate) struct ProfileWrapped {
     pub profile: Profile,
-}
-/*
-impl ProfileWrapped {
-    fn from_profile(profile: Profile) -> Self {
-        Self { profile }
-    }
-}
-*/
-#[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct LoginRequest {
-    pub email: String,
-    pub password: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct LoginRequestWrapped {
-//    user: String,
-    pub user: LoginRequest,
 }

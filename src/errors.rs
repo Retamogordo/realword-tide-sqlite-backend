@@ -29,7 +29,7 @@ pub enum BackendError {
     NoArticleFound,
     NoCommentFound(i32),
     NoCommentAdded,
-    UnhandledDBError(String),
+    UnhandledDBError(String, String),
     WebServerConnectionFailure(String),
     UnexpectedError(String),
 }
@@ -47,8 +47,8 @@ impl std::fmt::Display for BackendError {
                 Self::NoArticleFound => write!( f, "{}", "article not found"),
                 Self::NoCommentFound(id) => write!( f, "{}", format!("comment with id {} not found", id)),
                 Self::NoCommentAdded => write!( f, "{}", "no comment added"),
-                Self::UnhandledDBError(msg) =>  
-                    write!( f, "{}", format!("Unhandled db error: {}", msg)),
+                Self::UnhandledDBError(msg, code) =>  
+                    write!( f, "{}", format!("Unhandled db error: {}, code: {}", msg, code)),
                 Self::UnexpectedError(msg) => 
                     write!( f, "{}", format!("Unexpected server error occured: {}", msg)),
                 Self::WebServerConnectionFailure(msg) =>
@@ -83,7 +83,7 @@ impl Into<tide::Result> for BackendError {
             Self::NoCommentFound(_) => {
                 Ok(tide::Response::from(json!({ "errors":{"body": [ message ] }})))    
             }
-            Self::UnhandledDBError(_)
+            Self::UnhandledDBError(_, _)
             |
             Self::TokenCreationFailure(_) => 
 //                tide::StatusCode::InternalServerError, 
@@ -111,10 +111,13 @@ impl From<sqlx::Error> for BackendError {
                 let code = db_err.code().unwrap().into_owned();
                 if DB_UNIQUE_CONSTRAINT_VIOLATION == code 
                     || SQLITE_CONSTRAINT_UNIQUE == code {
-                        BackendError::UnhandledDBError(db_err.message().to_string())
-//                        BackendError::UsernameOrEmailExists
+//                        BackendError::UnhandledDBError(db_err.message().to_string())
+                        BackendError::UsernameOrEmailExists
                 } else {
-                    BackendError::UnhandledDBError(db_err.message().to_string())
+                    BackendError::UnhandledDBError(
+                        db_err.message().to_string(),
+                        code.to_string(),
+                    )
                 }
             },
             _ => unimplemented!("{}", err),

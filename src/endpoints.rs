@@ -2,7 +2,7 @@ use tide::prelude::*;
 
 //use validator::{Validate};
 use crate::app::AppState;
-use crate::{models::{user::*, article::*}, filters};
+use crate::{requests::{user::*, article::*}, models::{article::*}, filters};
 
 pub(crate) type Request = tide::Request<AppState>;
 
