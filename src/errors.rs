@@ -2,21 +2,7 @@ use tide::prelude::*;
 
 const DB_UNIQUE_CONSTRAINT_VIOLATION: &str = "1555";
 const SQLITE_CONSTRAINT_UNIQUE: &str = "2067";
-/*
-pub(crate) struct FromValidatorError(pub validator::ValidationErrors);
 
-impl Into<tide::Result> for FromValidatorError {
-    fn into(self) -> tide::Result {
-        Ok(tide::Response::from(json!({ "errors":{"body": [ self.0.to_string() ] }})))    
-    }
-}
-
-impl From<validator::ValidationErrors> for FromValidatorError {
-    fn from(err: validator::ValidationErrors) -> Self {
-        Self(err)
-    }
-}
-*/
 #[derive(Debug, Serialize)]
 pub enum BackendError {
 //    InvalidEmail,
@@ -69,9 +55,6 @@ impl Into<tide::Result> for BackendError {
     fn into(self) -> tide::Result {
         let message = self.to_string();
         match self {
-//            Self::InvalidEmail => {
-//                "email is invalid".to_string()
-//            },
             Self::ValidationError(_)
             |
             Self::UsernameOrEmailExists 
@@ -90,7 +73,6 @@ impl Into<tide::Result> for BackendError {
             Self::UnhandledDBError(_, _)
             |
             Self::TokenCreationFailure(_) => 
-//                tide::StatusCode::InternalServerError, 
                 Err(tide::Error::from_str(tide::StatusCode::InternalServerError, 
                     json!({ "errors":{"body": [ message ] }}))),
             Self::AuthenticationFailure => Err(tide::Error::from_str(tide::StatusCode::Unauthorized, self.to_string())),
@@ -98,7 +80,6 @@ impl Into<tide::Result> for BackendError {
             Self::UnexpectedError(_) => Err(tide::Error::from_str(tide::StatusCode::InternalServerError, self.to_string())),
             Self::WebServerConnectionFailure(_) => unreachable!(),
         }
-//        tide::Error::from_str(status, json!({ "errors":{"body": [ message ] }}))
     }
 }
 
@@ -115,7 +96,6 @@ impl From<sqlx::Error> for BackendError {
                 let code = db_err.code().unwrap().into_owned();
                 if DB_UNIQUE_CONSTRAINT_VIOLATION == code 
                     || SQLITE_CONSTRAINT_UNIQUE == code {
-//                        BackendError::UnhandledDBError(db_err.message().to_string())
                         BackendError::UsernameOrEmailExists
                 } else {
                     BackendError::UnhandledDBError(
@@ -134,42 +114,3 @@ impl From<std::io::Error> for BackendError {
         BackendError::WebServerConnectionFailure(err.to_string())
     }
 }
-
-/*
-#[derive(Debug, Serialize)]
-pub(crate) enum AuthenticationError {
-    TokenCreationError,
-    NoAuthorizationHeaderInRequest,
-    NoTokenInRequestHeader,
-    InvalidTokenInRequest,
-}
-
-impl std::error::Error for AuthenticationError {
-}
-
-impl std::fmt::Display for AuthenticationError{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let message = match self {
-            Self::TokenCreationError => {
-                "token creation error".to_string()
-            },
-            Self::NoAuthorizationHeaderInRequest => {
-                "no authorization header in request".to_string()
-            },
-            Self::NoTokenInRequestHeader => {
-                "no authentication token in header".to_string()
-            },
-            Self::InvalidTokenInRequest => {
-                "invalid token in request".to_string()
-            },
-        };
-        write!(f, "{}", message)
-    }
-}
-
-impl Into<tide::Error> for AuthenticationError {
-    fn into(self) -> tide::Error {
-        Err(tide::Error::from_str(tide::StatusCode::Unauthorized, self.to_string()))
-    }
-}
-*/

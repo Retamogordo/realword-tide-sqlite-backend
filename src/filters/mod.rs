@@ -1,12 +1,12 @@
 use tide::prelude::*;
-use crate::requests::{article::*};
+use crate::requests::{article::*, user::*};
 
 pub trait Filter: std::fmt::Display + Default {}
 
 pub(crate) struct UserFilter<'a> {
     pub username: Option<&'a str>,
     pub email: Option<&'a str>,
-    pub password: Option<&'a str>,
+//    pub password: Option<&'a str>,
 }
 
 impl<'a> UserFilter<'a> {
@@ -18,10 +18,10 @@ impl<'a> UserFilter<'a> {
         self.email = Some(email);
         self
     } 
-    pub fn password(mut self, password: &'a str) -> Self {
+/*    pub fn password(mut self, password: &'a str) -> Self {
         self.password = Some(password);
         self
-    } 
+    } */
 }
 impl Filter for UserFilter<'_> {}
 
@@ -30,16 +30,26 @@ impl Default for UserFilter <'_>{
         Self { 
             username: None,
             email: None,
-            password: None,
+//            password: None,
         }
     }
 }
-
+/*
+impl<'a> From<&'a LoginRequest> for UserFilter<'a> {
+    fn from(login_req: &'a LoginRequest) -> Self {
+        Self {
+            username: None,
+            email: Some(&login_req.email),
+//            password: Some(&login_req.password),
+        }
+    }
+}
+*/
 impl std::fmt::Display for UserFilter<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.username.as_ref().map(|val| write!( f, " {}='{}' AND", "users.username", val) ).unwrap_or(Ok(()))?;
         self.email.as_ref().map(|val| write!( f, " {}='{}' AND", "users.email", val) ).unwrap_or(Ok(()))?;
-        self.password.as_ref().map(|val| write!( f, " {}='{}' AND", "users.password", val) ).unwrap_or(Ok(()))?;
+//        self.password.as_ref().map(|val| write!( f, " {}='{}' AND", "users.password", val) ).unwrap_or(Ok(()))?;
         write!( f, " 1=1")
     }
 }

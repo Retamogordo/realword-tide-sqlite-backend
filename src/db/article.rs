@@ -181,11 +181,9 @@ pub(crate) async fn unfavorite_article(conn: &Pool<Sqlite>,
             (SELECT id FROM articles WHERE {}) AND username='{}'\
         ", unfavorite_by, username);
     
-    sqlx::query(
-        &statement
-    )
-    .execute(conn)
-    .await?;
+    sqlx::query(&statement)
+        .execute(conn)
+        .await?;
     
     get_one(conn, unfavorite_by).await
 }
@@ -198,11 +196,9 @@ pub(crate) async fn get_comments(conn: &Pool<Sqlite>,
 
     let statement = format!("SELECT * FROM comments WHERE {} {} {}", filter, order_by, limit_filter);
 
-    let comments = sqlx::query_as::<_, article::Comment>(
-        &statement
-    )
-    .fetch_all(conn)  
-    .await?;
+    let comments = sqlx::query_as::<_, article::Comment>(&statement)
+        .fetch_all(conn)  
+        .await?;
     
     let mut multiple_comments = Vec::<article::CommentResponse>::with_capacity(comments.len());
 
@@ -217,26 +213,16 @@ pub(crate) async fn add_comment(conn: &Pool<Sqlite>,
     filter: filters::CommentFilterByValues<'_>,
     author: &str,
     comment_body: &str,
-//    comment: article::AddCommentRequest,
 ) -> Result<article::CommentResponse, errors::BackendError>  {
-//) -> Result<(), errors::BackendError>  {
     let statement = format!("INSERT INTO comments 
-    (author, body, createdAt, updatedAt, article_id) 
-    VALUES( '{}','{}', datetime('now'), datetime('now'), 
-    (SELECT id FROM articles WHERE slug='{}' LIMIT 1));", 
+        (author, body, createdAt, updatedAt, article_id) 
+        VALUES( '{}','{}', datetime('now'), datetime('now'), 
+            (SELECT id FROM articles WHERE slug='{}' LIMIT 1));", 
         author, comment_body, filter.article_slug.unwrap());
     sqlx::query(&statement)
-//    .bind(&author)
-//    .bind(&comment.body)
-//    .bind(&filter.to_string())
-    .execute(conn)    
-    .await?;
+        .execute(conn)    
+        .await?;
 
-/*    let mut comment_filter = filters::CommentFilterByValues::default()
-        .author(author);
-    if let Some(slug) = filter.slug.as_ref() {
-        comment_filter = comment_filter.article_slug(slug);
-    }*/
     let order_by = crate::filters::OrderByFilter::Descending("id");
     let limit_filter = crate::filters::LimitOffsetFilter { limit: Some(1), offset: None };
 
@@ -259,17 +245,14 @@ pub(crate) async fn delete_comments(conn: &Pool<Sqlite>,
         .await
 }
 
-
 pub(crate) async fn get_tags(conn: &Pool<Sqlite>,
 ) -> Result<article::TagList, errors::BackendError>  {
 
     let statement = format!("SELECT tagList FROM articles");
 
-    let all_tags: Vec<String> = sqlx::query_scalar(
-        &statement
-    )
-    .fetch_all(conn)  
-    .await?;
+    let all_tags: Vec<String> = sqlx::query_scalar(&statement)
+        .fetch_all(conn)  
+        .await?;
 
     let mut all_tags_hash_set 
         = std::collections::HashSet::<&str>::with_capacity(200*all_tags.len());

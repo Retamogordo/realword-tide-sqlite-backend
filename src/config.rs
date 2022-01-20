@@ -19,7 +19,28 @@ impl Config {
             drop_database: 0 != std::env::var("DROP_DATABASE")
                 .ok()
                 .and_then(|s| s.parse::<u32>().ok() )
-                .unwrap_or(0) 
+                .unwrap_or(0),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct HttpConfig {
+    pub http_port: String,
+    pub host: String,
+}
+
+impl HttpConfig {
+    pub fn from_env() -> Self {
+        dotenv::dotenv().ok();
+
+        Self {
+            http_port: std::env::var("HTTP_PORT")
+                .ok()
+                .unwrap_or("8000".to_string()),
+            host: std::env::var("HOST")
+                .ok()
+                .unwrap_or("0.0.0.0".to_string()),
         }
     }
 }

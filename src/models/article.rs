@@ -52,8 +52,6 @@ pub struct UpdateArticle {
     pub title: Option<String>,
     pub description: Option<String>,
     pub body: Option<String>,
-//    #[serde(skip_deserializing)]
-//    pub slug_from_title: Option<String>,
 }
 
 impl UpdateArticle {

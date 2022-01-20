@@ -1,6 +1,13 @@
 
 use tide::prelude::*;
-use crate::requests;
+use validator::{Validate};
+
+use scrypt::{
+    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    Scrypt,
+};
+
+use crate::{requests, errors::BackendError};
 
 #[derive(Debug, Serialize, Clone)]
 #[derive(sqlx::FromRow)]
@@ -10,20 +17,31 @@ pub struct User {
     pub username: String,    
     pub bio: String,    
     pub image: Option<String>, 
-//    #[serde(skip_serializing)]
-//    password: String,
+    #[serde(skip_serializing)]
+    pub(crate) hashed_password: String,
 }
 
-impl From<requests::user::UserReg> for User {
-    fn from(user_reg: requests::user::UserReg) -> Self {
-        Self {
+impl TryFrom<requests::user::UserReg> for User {
+    type Error = BackendError;
+    fn try_from(user_reg: requests::user::UserReg) -> Result<Self, Self::Error> {
+        user_reg.validate()?;
+
+        let salt = SaltString::generate(&mut OsRng);
+        let hash = match Scrypt.hash_password(user_reg.password.as_bytes(), &salt) {
+            Ok(hash) => hash,
+            Err(_) => { return 
+                Err(crate::errors::BackendError::UnexpectedError("could not register user".to_string())); 
+            } 
+        }; 
+            
+        Ok( Self {
             username: user_reg.username,
             email: user_reg.email,
-//            password: user_reg.password,
+            hashed_password: hash.to_string(),
             token: None,
             bio: "".to_string(), 
             image: None,
-        }
+        })
     }
 }
 
@@ -31,7 +49,17 @@ impl User {
     pub(crate) fn wrap(self) -> UserWrapped {
         UserWrapped { user: self }
     }
+
+    pub(crate) fn verify(&self, password: &str) -> Result<(), BackendError> {
+        let hash = PasswordHash::new(&self.hashed_password)
+            .map_err(|_| BackendError::UnexpectedError("could not parse hashed user password".to_string()))?;
+
+        Scrypt
+            .verify_password(password.as_bytes(), &hash)
+            .map_err(|_| BackendError::IncorrectUsernameOrPassword(self.email.clone()))
+    }
 }
+
 #[derive(Debug, Serialize)]
 pub(crate) struct UserWrapped {
     pub user: User,

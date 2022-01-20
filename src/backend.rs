@@ -1,34 +1,17 @@
 use sqlx::sqlite::{SqlitePool};
-use validator::{Validate};
 
 use crate::{config::Config, 
     models::{user::*, article::*}, 
     requests,
-    errors::*, db, auth, filters
+    db, auth, filters, errors::BackendError
 };
 
 use crate::requests::IntoAuthenticatedRequest;
-/*
-#[async_trait]
-pub trait Service {
-    type ResultType;
 
-    async fn execute(&self) -> Result<Self::ResultType, crate::errors::BackendError>;
-    fn auth(self, token: &str) -> Self;
-}
-
-pub enum Services {
-    RegisterUser(UserReg),
-    Login,
-    UpdateUser,
-
-}
-*/
 #[derive(Clone, Debug)]
 pub struct Server {
     config: Config,
     pub(crate) conn: Option<SqlitePool>,
-//    secret: Option<&'static [u8]>,
 }
 
 impl Server {
@@ -40,39 +23,38 @@ impl Server {
     }
  
     pub async fn connect(&mut self) -> Result<(), sqlx::Error> {
-
-        self.conn = Some(crate::db::connect(&self.config)
-            .await?);
+        self.conn = Some(db::connect(&self.config).await?);
         Ok(())
-//            .expect("failed to connect to sqlite database. ")
     }
- //   pub fn with_db_conn(conn: SqlitePool) -> Self {
- //       Self { conn, secret: None }
- //   }
 
     pub fn secret(&self) -> &[u8] {
         self.config.secret.as_bytes()
     }
 
     pub async fn register_user(&self, user_reg: requests::user::UserReg) -> Result<User, BackendError> {
-        user_reg.validate()?;
 
-        db::user::register_user(self.conn.as_ref().unwrap(), &user_reg).await?;
-    
-        let mut user: User = user_reg.into();
+        let user_to_reg = User::try_from(user_reg)?;
+
+        let mut user = db::user::register_user(self.conn.as_ref().unwrap(), &user_to_reg).await?;
         // login by creating token
         user.token = Some(auth::Auth::create_token(&user, self.secret())?);
         Ok(user)
     }
 
     pub async fn login_user(&self, login_req: requests::user::LoginRequest) -> Result<User, BackendError> {
-        let user_by = filters::UserFilter::default()
-            .email(&login_req.email)
-            .password(&login_req.password);
+        let user_by = filters::UserFilter::default().email(&login_req.email);
+
         let mut user = db::user::get_user(self.conn.as_ref().unwrap(), user_by)
             .await
-            .map_err(|_| BackendError::IncorrectUsernameOrPassword(login_req.email))
-            ?;
+            .map_err(|err| 
+                match err {
+                    BackendError::NoUserFound(_) =>
+                        BackendError::IncorrectUsernameOrPassword(login_req.email.clone()),
+                    err @ _ => err,
+                }
+            )?;
+
+        user.verify(&login_req.password)?;
 
         user.token = Some(auth::Auth::create_token(&user, self.secret())?);
 
@@ -91,16 +73,7 @@ impl Server {
     pub async fn profile(&self, username: &str) -> Result<Profile, BackendError> {
         db::user::get_profile(self.conn.as_ref().unwrap(), username)
             .await
-            .ok_or(crate::errors::BackendError::NoUserFound(username.to_string()))
-
-/*        let res = match db::user::get_profile(self.conn.as_ref().unwrap(), username).await {
-            Some(profile) => {
-                Ok(profile)
-            },
-            None => 
-                Err(crate::errors::BackendError::NoUserFound(username.to_string()))
-        };
-        res*/
+            .ok_or(BackendError::NoUserFound(username.to_string()))
     }
 
     pub async fn update_user(&self, token: &str, update_user_req: requests::user::UserUpdateRequest) -> Result<User, BackendError> {
@@ -175,22 +148,22 @@ impl Server {
             // NoArticleFound error is returned
             // if optimistic update fails, try to verify if this happened
             // because user is not authorized to do so
-            crate::errors::BackendError::NoArticleFound => {
+            BackendError::NoArticleFound => {
                 let filter = filters::ArticleFilterByValues::default().slug(slug.to_string());
                 if let Ok(article_response) = db::article::get_one(self.conn.as_ref().unwrap(), filter).await {
                     auth::Auth::authorize(token, self.secret(), &article_response.article.author)?;
 
-                    Err(crate::errors::BackendError::UnexpectedError(
+                    Err(BackendError::UnexpectedError(
                         " could not update article despite user was authorized to do so.".to_string())
                     )
                 } else {
-                    Err(crate::errors::BackendError::NoArticleFound)
+                    Err(BackendError::NoArticleFound)
                 }
             },
             err @ _ =>  Err(err),
             }
         };
-    res
+        res
     }
 
     pub async fn delete_article(&self, 
@@ -213,11 +186,11 @@ impl Server {
 
                 auth::Auth::authorize(token, self.secret(), &article_response.article.author)?;
 
-                Err(crate::errors::BackendError::UnexpectedError(
-                    " could not delete article despite user was authorized to do so.".to_string())
+                Err(BackendError::UnexpectedError(
+                    "could not delete article despite user was authorized to do so.".to_string())
                 )
             } else {
-                Err(crate::errors::BackendError::NoArticleFound)
+                Err(BackendError::NoArticleFound)
             }
         } else {
             Ok(())

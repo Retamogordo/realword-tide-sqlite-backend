@@ -4,11 +4,9 @@ use std::str::FromStr;
 use crate::config::Config;
 
 pub(crate) struct Schema {
-//    sqlite_pool: &'a SqlitePool,
     connection_options: SqliteConnectOptions,
 }
 
-//impl<'a> Schema<'a> {
 impl Schema {
     pub fn with_config(config: &Config) -> Result<Self, sqlx::Error> {
         if config.drop_database {
@@ -34,25 +32,6 @@ impl Schema {
         Ok(Self { connection_options })
     }
 
- /*   pub fn with_pool(sqlite_pool: &'a SqlitePool) -> Schema<'a> {
-        Self { sqlite_pool }
-    }
-*/
-/*    pub async fn drop_tables(mut self) -> Schema<'a> {
-        sqlx::query("
-            DROP TABLE IF EXISTS users;
-            DROP TABLE IF EXISTS profiles;
-            DROP TABLE IF EXISTS followers;
-            DROP TABLE IF EXISTS articles;
-            DROP TABLE IF EXISTS favorite_articles;
-            DROP TABLE IF EXISTS comments;
-        ")
-            .execute(self.sqlite_pool)    
-            .await
-            .expect("Fatal schema failure on dropping tables.");
-        self
-    }
-*/
     pub async fn create(self) -> Result<SqlitePool, sqlx::Error> {
         let sqlite_pool = SqlitePoolOptions::new()
         //        .max_connections(pool_max_connections)
@@ -65,12 +44,11 @@ impl Schema {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE NOT NULL,
                 email TEXT UNIQUE NOT NULL,
-                password TEXT NOT NULL
+                hashed_password TEXT NOT NULL
             );
         ")
         .execute(&sqlite_pool)    
         .await?;
- //       .expect("Fatal schema failure on creating 'user' table.");
         
         sqlx::query("
             CREATE TABLE IF NOT EXISTS profiles (
@@ -86,7 +64,6 @@ impl Schema {
         ")
         .execute(&sqlite_pool)    
         .await?;
- //       .expect("Fatal schema failure on creating 'profiles' table.");
     
         sqlx::query("
             CREATE TABLE IF NOT EXISTS followers (
@@ -105,7 +82,6 @@ impl Schema {
         ")
         .execute(&sqlite_pool)    
         .await?;
- //       .expect("Fatal schema failure on creating 'followers' table.");
     
         sqlx::query("
             CREATE TABLE IF NOT EXISTS articles (
@@ -125,7 +101,6 @@ impl Schema {
         ")
         .execute(&sqlite_pool)    
         .await?;
- //       .expect("Fatal schema failure on creating 'articles' table.");
         
         sqlx::query("
             CREATE TABLE IF NOT EXISTS favorite_articles (
@@ -143,7 +118,6 @@ impl Schema {
         ")
         .execute(&sqlite_pool)    
         .await?;
- //       .expect("Fatal schema failure on creating 'favorite_articles' table.");
     
         sqlx::query("
             CREATE TABLE IF NOT EXISTS comments (
@@ -164,7 +138,6 @@ impl Schema {
         ")
         .execute(&sqlite_pool)    
         .await?;
- //       .expect("Fatal schema failure on creating 'comments' table.");
 
         Ok(sqlite_pool)
     }

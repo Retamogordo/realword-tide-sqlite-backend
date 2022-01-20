@@ -1,6 +1,6 @@
 
 //use sqlx::sqlite::{SqlitePool};
-use crate::{config::Config, endpoints::*, backend};
+use crate::{config::{Config, HttpConfig}, endpoints::*, backend};
 
 
 
@@ -28,12 +28,15 @@ impl App {
         Self {}
     }
     
-    pub async fn run(&'static self, config: Config) -> std::result::Result<(), crate::errors::BackendError> {
+    pub async fn run(&'static self) -> std::result::Result<(), crate::errors::BackendError> {
  /*       let conn = crate::db::connect(&self.config)
             .await
             .expect("failed to connect to sqlite database. ");
 */
-        let mut state = AppState { server: backend::Server::with_config(config) };
+        let cfg = Config::from_env();
+        let http_cfg = HttpConfig::from_env();
+
+        let mut state = AppState { server: backend::Server::with_config(cfg) };
         state.server.connect().await?;
 
         let mut app = tide::with_state(state);
@@ -60,7 +63,8 @@ impl App {
         app.at("/api/tags").get(get_tags);
      
 //        app.listen("127.0.0.1:3000").await?;
-        app.listen("0.0.0.0:3000").await?;
+        let hp = format!("{}:{}", http_cfg.host, http_cfg.http_port); 
+        app.listen(hp).await?;
     
         Ok(())
     }

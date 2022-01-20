@@ -16,7 +16,6 @@ pub(crate) async fn register(mut req: Request) -> tide::Result {
 }
 
 pub(crate) async fn login(mut req: Request) -> tide::Result {
-    println!("in login");
     let login_req: LoginRequestWrapped = req.body_json().await?;
 
     req.state().server.login_user(login_req.user).await
@@ -135,7 +134,6 @@ pub(crate) async fn delete_article(req: Request) -> tide::Result {
         )
         .or_else(|err| err.into())
 }
-
 
 pub(crate) async fn favorite_article(req: Request) -> tide::Result {
     let token = crate::utils::token_from_request(&req)?;
