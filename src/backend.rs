@@ -1,3 +1,6 @@
+// middle level thin layer between tide server and database handling,
+// used for transforming http requests to model form, compile time guards
+// for requests that need be authenicated and for injecting "offline" tests 
 use sqlx::sqlite::{SqlitePool};
 
 use crate::{config::Config, 
@@ -32,12 +35,15 @@ impl Server {
     }
 
     pub async fn register_user(&self, user_reg: requests::user::UserReg) 
-    -> Result<LoggedInUser, BackendError> {
+        -> Result<LoggedInUser, BackendError> {
+        
         let password = user_reg.password.clone();
         let user_to_reg = User::try_from(user_reg)?;
 
         let user = db::user::register_user(self.conn.as_ref().unwrap(), &user_to_reg).await?;
-
+        // transform user to serializable LoggedInUser instance by verifying password.
+        // here verification is not really needed, because the user is just regstered.
+        // verify is called for its return value
         user.verify(&password, self.secret())
     }
 
@@ -54,7 +60,7 @@ impl Server {
                     err @ _ => err,
                 }
             )?;
-
+        // transform user to serializable LoggedInUser instance by verifying password
         user.verify(&login_req.password, self.secret())
     }
 

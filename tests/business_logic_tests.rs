@@ -1,7 +1,7 @@
-//! These tests do not cover tide requests parsing, instead they 
-//! introduce business logic testing steps by artificially forming 
-//! middle layer server requests thus simulating local loop without involving tide
-//! 
+// These tests do not cover tide requests parsing, instead they 
+// introduce business logic testing steps by artificially forming 
+// middle layer server requests thus simulating local loop without involving tide.
+// Since I need them to run in order I packed them into one test.
 use once_cell::sync::OnceCell;
 use async_std::{print, println};
 use realworld_tide_sqlite_backend::{
@@ -37,7 +37,7 @@ async fn tests() -> Result<(), errors::BackendError> {
         email: "scott.smith@fakemail.com".to_string(),
         password: "password".to_string(),
     };
-
+    // register user
     print!("registering user {} (will take some secs)...", reg_scott_smith.username).await;
     server.register_user(reg_scott_smith).await?;
     println!(" done.").await;

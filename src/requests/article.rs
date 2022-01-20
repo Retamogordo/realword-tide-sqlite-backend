@@ -47,7 +47,6 @@ impl AuthenticatedRequest for CreateArticleRequestAuthenticated {
     }
 }
 
-
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")] 
 pub(crate) struct UpdateArticleRequestBody {
@@ -154,8 +153,6 @@ impl<'a> AuthenticatedRequest for AddCommentRequestAuthenticated<'a> {
         }
     }
 }
-
-
 
 pub struct DeleteCommentRequest<'a> {
     pub id: i32,

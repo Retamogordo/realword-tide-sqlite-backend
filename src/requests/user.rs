@@ -36,10 +36,8 @@ impl Default for UserUpdateRequest {
     }
 }
 
-
 #[derive(Debug, Deserialize)]
 pub(crate) struct UserUpdateWrapped {
-//    user: String,
     pub user: UserUpdateRequest,
 }
 
@@ -51,6 +49,5 @@ pub struct LoginRequest {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct LoginRequestWrapped {
-//    user: String,
     pub user: LoginRequest,
 }
