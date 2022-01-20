@@ -28,16 +28,131 @@ where
     Ok(req)
 }
 
-pub(crate) struct CreateArticleRequestAuthenticated<'a> {
-    pub article_request: &'a CreateArticleRequest,
-    pub author: &'a str,
+pub(crate) struct CreateArticleRequestAuthenticated {
+    pub article_request: CreateArticleRequest,
+    pub author: String,
 }
+
+impl IntoAuthenticatedRequest<CreateArticleRequestAuthenticated> for CreateArticleRequest {
+}
+
+impl AuthenticatedRequest for CreateArticleRequestAuthenticated {
+    type FromRequest = CreateArticleRequest;
+    fn from_request_with_claims(req: Self::FromRequest, 
+                                claims: crate::auth::Claims) -> Self {
+        Self {
+            article_request: req,
+            author: claims.username,
+        }
+    }
+}
+
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")] 
-pub(crate) struct UpdateArticleRequest {
-//    #[serde(deserialize_with = "slugify_article_on_update")]    
+pub(crate) struct UpdateArticleRequestBody {
     pub article: UpdateArticle,
+}
+
+pub struct UpdateArticleRequest<'a> {
+    pub article: UpdateArticle,
+    pub slug: &'a str,
+}
+
+impl <'a> UpdateArticleRequest<'a> {
+    pub(crate) fn from_req_parts(body: UpdateArticleRequestBody, slug: &'a str) -> Self {
+        Self {
+            article: body.article,
+            slug,
+        }
+    }
+}
+
+pub(crate) struct UpdateArticleRequestAuthenticated<'a> {
+    pub article_request: UpdateArticleRequest<'a>,
+    pub author: String,
+}
+
+impl<'a> IntoAuthenticatedRequest<UpdateArticleRequestAuthenticated<'a>> for UpdateArticleRequest<'a> {
+}
+
+impl<'a> AuthenticatedRequest for UpdateArticleRequestAuthenticated<'a> {
+    type FromRequest = UpdateArticleRequest<'a>;
+    fn from_request_with_claims(req: Self::FromRequest, claims: crate::auth::Claims) -> Self {
+        Self {
+            article_request: req,
+            author: claims.username,
+        }
+    }
+}
+
+
+pub struct DeleteArticleRequest<'a> { 
+    pub slug: &'a str,
+}
+
+impl<'a> IntoAuthenticatedRequest<DeleteArticleRequestAuthenticated<'a>> for DeleteArticleRequest<'a> {
+}
+
+pub(crate) struct DeleteArticleRequestAuthenticated<'a> {
+    pub article_request: DeleteArticleRequest<'a>,
+    pub author: String,
+}
+
+impl<'a> AuthenticatedRequest for DeleteArticleRequestAuthenticated<'a> {
+    type FromRequest = DeleteArticleRequest<'a>;
+    fn from_request_with_claims(req: Self::FromRequest, claims: crate::auth::Claims) -> Self {
+        Self {
+            article_request: req,
+            author: claims.username,
+        }
+    }
+}
+
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")] 
+struct AddCommentRequestBody { 
+    pub body: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub(crate) struct AddCommentRequestBodyWrapped { 
+    comment: AddCommentRequestBody,
+}
+
+pub struct AddCommentRequest<'a> {
+    pub body: String,
+    pub article_slug: &'a str,
+}
+
+impl<'a> AddCommentRequest<'a> {
+    pub(crate) fn from_req_parts(
+        body_wrapped: AddCommentRequestBodyWrapped, 
+        article_slug: &'a str) -> Self {
+            Self { 
+                body: body_wrapped.comment.body,
+                article_slug
+            }
+    }
+}
+
+impl<'a> IntoAuthenticatedRequest<AddCommentRequestAuthenticated<'a>> for AddCommentRequest<'a> {
+}
+
+pub(crate) struct AddCommentRequestAuthenticated<'a> {
+    pub article_request: AddCommentRequest<'a>,
+    pub author: String,
+}
+
+impl<'a> AuthenticatedRequest for AddCommentRequestAuthenticated<'a> {
+    type FromRequest = AddCommentRequest<'a>;
+    fn from_request_with_claims(req: Self::FromRequest, claims: crate::auth::Claims) -> Self {
+        Self {
+            article_request: req,
+            author: claims.username,
+        }
+    }
 }
 
 
@@ -46,16 +161,6 @@ pub struct DeleteCommentRequest<'a> {
     pub id: i32,
     pub article_slug: &'a str,
 }
-/*
-impl<'a> DeleteCommentRequest<'a> {
-    pub(crate) fn authenticate(self, author: &'a str) -> DeleteCommentRequestAuthenticated<'a> {
-        DeleteCommentRequestAuthenticated {
-            article_request: self,
-            author
-        }
-    }
-}
-*/
 
 impl<'a> IntoAuthenticatedRequest<DeleteCommentRequestAuthenticated<'a>> for DeleteCommentRequest<'a> {
 }
@@ -67,8 +172,7 @@ pub(crate) struct DeleteCommentRequestAuthenticated<'a> {
 
 impl<'a> AuthenticatedRequest for DeleteCommentRequestAuthenticated<'a> {
     type FromRequest = DeleteCommentRequest<'a>;
-    fn from_request_with_claims(req: DeleteCommentRequest<'a>, 
-                                claims: crate::auth::Claims) -> Self {
+    fn from_request_with_claims(req: Self::FromRequest, claims: crate::auth::Claims) -> Self {
         Self {
             article_request: req,
             author: claims.username,

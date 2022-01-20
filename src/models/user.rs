@@ -10,8 +10,8 @@ pub struct User {
     pub username: String,    
     pub bio: String,    
     pub image: Option<String>, 
-    #[serde(skip_serializing)]
-    password: String,
+//    #[serde(skip_serializing)]
+//    password: String,
 }
 
 impl From<requests::user::UserReg> for User {
@@ -19,7 +19,7 @@ impl From<requests::user::UserReg> for User {
         Self {
             username: user_reg.username,
             email: user_reg.email,
-            password: user_reg.password,
+//            password: user_reg.password,
             token: None,
             bio: "".to_string(), 
             image: None,

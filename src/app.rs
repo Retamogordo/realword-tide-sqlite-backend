@@ -59,7 +59,8 @@ impl App {
         app.at("/api/articles/:slug/comments/:id").delete(delete_comment);
         app.at("/api/tags").get(get_tags);
      
-        app.listen("127.0.0.1:3000").await?;
+//        app.listen("127.0.0.1:3000").await?;
+        app.listen("0.0.0.0:3000").await?;
     
         Ok(())
     }

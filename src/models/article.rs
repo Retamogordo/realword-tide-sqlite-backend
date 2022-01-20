@@ -24,7 +24,7 @@ pub struct Article {
     pub author: String,
 }
 
-impl From<CreateArticleRequestAuthenticated<'_>> for Article {
+impl From<CreateArticleRequestAuthenticated> for Article {
     fn from(create_article: CreateArticleRequestAuthenticated) -> Self {
         Self { 
             slug: create_article.article_request.slug.clone(), 
@@ -190,13 +190,15 @@ pub struct TagList {
     pub tags: Vec<String>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")] 
-pub struct AddCommentRequest { 
-    pub body: String,
+impl std::fmt::Display for TagList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!( f, "[")?;
+        for tag in &self.tags {
+            write!( f, "{}, ", tag)?;
+        }
+        write!( f, "]")
+    }
 }
 
-#[derive(Debug, Deserialize, Clone)]
-pub(crate) struct AddCommentRequestWrapped { 
-    pub comment: AddCommentRequest,
-}
+
+

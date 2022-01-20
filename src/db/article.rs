@@ -99,7 +99,7 @@ async fn get_articles<F: crate::filters::Filter>(conn: &Pool<Sqlite>,
 }
 
 pub(crate) async fn update_article(conn: &Pool<Sqlite>,
-        update_article: crate::models::article::UpdateArticle,
+        update_article: &crate::models::article::UpdateArticle,
         filter: crate::filters::UpdateArticleFilter<'_>
 ) -> Result<article::ArticleResponse, errors::BackendError>  {
 
@@ -149,16 +149,17 @@ pub(crate) async fn get_favorite<F: filters::Filter>(conn: &Pool<Sqlite>,
     .await        
 }
 */
-pub(crate) async fn favorite_article<F: crate::filters::Filter>(conn: &Pool<Sqlite>,
-    filter: F,
+pub(crate) async fn favorite_article(conn: &Pool<Sqlite>,
+    slug: &str,
     username: &str,
 ) -> Result<article::ArticleResponse, errors::BackendError>  {
+    let favorite_by = filters::ArticleFilterByValues::default().slug(slug.to_string());
 
     let statement = format!("\
         INSERT INTO favorite_articles (id, username) VALUES ( \
             (SELECT id FROM articles WHERE {}), '{}') \
             ON CONFLICT DO NOTHING; \
-        ", filter.to_string(), username);
+        ", favorite_by, username);
     
     sqlx::query(
         &statement
@@ -166,18 +167,19 @@ pub(crate) async fn favorite_article<F: crate::filters::Filter>(conn: &Pool<Sqli
     .execute(conn)
     .await?;        
 
-    get_one(conn, filter).await
+    get_one(conn, favorite_by).await
 }
 
-pub(crate) async fn unfavorite_article<F: filters::Filter>(conn: &Pool<Sqlite>,
-    filter: F,
+pub(crate) async fn unfavorite_article(conn: &Pool<Sqlite>,
+    slug: &str,
     username: &str,
 ) -> Result<article::ArticleResponse, errors::BackendError>  {
+    let unfavorite_by = filters::ArticleFilterByValues::default().slug(slug.to_string());
 
     let statement = format!("\
         DELETE FROM favorite_articles WHERE favorite_articles.id= \
             (SELECT id FROM articles WHERE {}) AND username='{}'\
-        ", filter, username);
+        ", unfavorite_by, username);
     
     sqlx::query(
         &statement
@@ -185,7 +187,7 @@ pub(crate) async fn unfavorite_article<F: filters::Filter>(conn: &Pool<Sqlite>,
     .execute(conn)
     .await?;
     
-    get_one(conn, filter).await
+    get_one(conn, unfavorite_by).await
 }
 
 pub(crate) async fn get_comments(conn: &Pool<Sqlite>,
@@ -212,13 +214,17 @@ pub(crate) async fn get_comments(conn: &Pool<Sqlite>,
 }
     
 pub(crate) async fn add_comment(conn: &Pool<Sqlite>,
-    filter: filters::ArticleFilterByValues,
+    filter: filters::CommentFilterByValues<'_>,
     author: &str,
-    comment: article::AddCommentRequest,
+    comment_body: &str,
+//    comment: article::AddCommentRequest,
 ) -> Result<article::CommentResponse, errors::BackendError>  {
 //) -> Result<(), errors::BackendError>  {
-    let statement = format!("INSERT INTO comments (author, body, createdAt, updatedAt, article_id) VALUES( '{}','{}', datetime('now'), datetime('now'), (SELECT id FROM articles WHERE {} LIMIT 1));", 
-        author, comment.body, filter);
+    let statement = format!("INSERT INTO comments 
+    (author, body, createdAt, updatedAt, article_id) 
+    VALUES( '{}','{}', datetime('now'), datetime('now'), 
+    (SELECT id FROM articles WHERE slug='{}' LIMIT 1));", 
+        author, comment_body, filter.article_slug.unwrap());
     sqlx::query(&statement)
 //    .bind(&author)
 //    .bind(&comment.body)
@@ -226,15 +232,15 @@ pub(crate) async fn add_comment(conn: &Pool<Sqlite>,
     .execute(conn)    
     .await?;
 
-    let mut comment_filter = filters::CommentFilterByValues::default()
+/*    let mut comment_filter = filters::CommentFilterByValues::default()
         .author(author);
     if let Some(slug) = filter.slug.as_ref() {
         comment_filter = comment_filter.article_slug(slug);
-    }
+    }*/
     let order_by = crate::filters::OrderByFilter::Descending("id");
     let limit_filter = crate::filters::LimitOffsetFilter { limit: Some(1), offset: None };
 
-    let comments_response = get_comments(conn, comment_filter, order_by, limit_filter).await?;
+    let comments_response = get_comments(conn, filter, order_by, limit_filter).await?;
     if let Some(comment) = comments_response.into_iter().next() {
         Ok(comment)
     } else {

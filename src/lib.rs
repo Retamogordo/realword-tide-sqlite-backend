@@ -9,6 +9,4 @@ pub mod errors;
 pub mod backend;
 pub mod app;
 pub mod config;
-pub mod test_api;
-
 

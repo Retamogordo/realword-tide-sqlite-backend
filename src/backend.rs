@@ -71,7 +71,7 @@ impl Server {
             .password(&login_req.password);
         let mut user = db::user::get_user(self.conn.as_ref().unwrap(), user_by)
             .await
-            .map_err(|err| BackendError::IncorrectUsernameOrPassword(login_req.email))
+            .map_err(|_| BackendError::IncorrectUsernameOrPassword(login_req.email))
             ?;
 
         user.token = Some(auth::Auth::create_token(&user, self.secret())?);
@@ -117,7 +117,7 @@ impl Server {
         let claims = auth::Auth::authenticate(token, self.secret())?;
 
         db::user::follow(self.conn.as_ref().unwrap(), &claims.username, &celeb_name).await
-    }
+    }   
 
     pub async fn unfollow(&self, token: &str, celeb_name: &str) -> Result<Profile, BackendError> {
         let claims = auth::Auth::authenticate(token, self.secret())?;
@@ -125,13 +125,12 @@ impl Server {
         db::user::unfollow(self.conn.as_ref().unwrap(), &claims.username, &celeb_name).await
     }
 
-    pub async fn create_article(&self, token: &str, article_request: &requests::article::CreateArticleRequest) -> Result<ArticleResponse, BackendError> {
-        let claims = auth::Auth::authenticate(token, self.secret())?;
-        let create_article = requests::article::CreateArticleRequestAuthenticated { 
-            article_request, 
-            author: &claims.username 
-        };
-        let article = Article::from(create_article);
+    pub async fn create_article(&self, 
+        token: &str, 
+        article_request: requests::article::CreateArticleRequest) -> Result<ArticleResponse, BackendError> {
+        
+        let create_req_auth = article_request.authenticate(token, self.secret())?; 
+        let article = Article::from(create_req_auth);
 
         db::article::create_article(self.conn.as_ref().unwrap(), article).await
     }
@@ -158,19 +157,15 @@ impl Server {
 
     pub async fn update_article(&self, 
         token: &str, 
-        update_article: UpdateArticle, 
-        slug: &str,
-//        mut update_by: filters::UpdateArticleFilter<'_>,
+        update_article_req: requests::article::UpdateArticleRequest<'_>, 
     ) -> Result<ArticleResponse, BackendError> {
     
-    let claims = auth::Auth::authenticate(token, self.secret())?;
-    let update_by = filters::UpdateArticleFilter { 
-        slug,
-        author: &claims.username
-    };
+    let update_req_auth = update_article_req.authenticate(token, self.secret())?;
+    let update_by = filters::UpdateArticleFilter::from(&update_req_auth);
+    let slug = update_by.slug;
 
     let res = match db::article::update_article(self.conn.as_ref().unwrap(), 
-                                                update_article, 
+                                                &update_req_auth.article_request.article, 
                                                 update_by).await {
         Ok(article_response) => {
             Ok(article_response)
@@ -183,9 +178,6 @@ impl Server {
             crate::errors::BackendError::NoArticleFound => {
                 let filter = filters::ArticleFilterByValues::default().slug(slug.to_string());
                 if let Ok(article_response) = db::article::get_one(self.conn.as_ref().unwrap(), filter).await {
-
- //                   let token = crate::utils::token_from_request(&req)?;
- //                   let secret = req.state().secret;
                     auth::Auth::authorize(token, self.secret(), &article_response.article.author)?;
 
                     Err(crate::errors::BackendError::UnexpectedError(
@@ -196,33 +188,29 @@ impl Server {
                 }
             },
             err @ _ =>  Err(err),
-        }
-    };
+            }
+        };
     res
     }
 
     pub async fn delete_article(&self, 
         token: &str, 
         slug: &str,
-    //        mut update_by: filters::UpdateArticleFilter<'_>,
     ) -> Result<(), BackendError> {
         
-        let claims = auth::Auth::authenticate(token, self.secret())?;
-        let delete_by = filters::UpdateArticleFilter { 
-            slug,
-            author: &claims.username
+        let delete_req = requests::article::DeleteArticleRequest {
+            slug
         };
+        let delete_req_auth = delete_req.authenticate(token, self.secret())?;
+        let delete_by = filters::UpdateArticleFilter::from(&delete_req_auth);
 
         let query_res = db::article::delete_article(self.conn.as_ref().unwrap(), 
                                                     delete_by).await?;
         if 0 == query_res.rows_affected() {
                                             
-
             let filter = filters::ArticleFilterByValues::default().slug(slug.to_string());
             if let Ok(article_response) = db::article::get_one(self.conn.as_ref().unwrap(), filter).await {
 
-    //                   let token = crate::utils::token_from_request(&req)?;
-    //                   let secret = req.state().secret;
                 auth::Auth::authorize(token, self.secret(), &article_response.article.author)?;
 
                 Err(crate::errors::BackendError::UnexpectedError(
@@ -236,16 +224,16 @@ impl Server {
         }
     }
 
-    pub async fn favorite_article(&self, token: &str, favorite_by: filters::ArticleFilterByValues) -> Result<ArticleResponse, BackendError> {
+    pub async fn favorite_article(&self, token: &str, slug: &str) -> Result<ArticleResponse, BackendError> {
         let claims = auth::Auth::authenticate(token, self.secret())?;
 
-        db::article::favorite_article(self.conn.as_ref().unwrap(), favorite_by, &claims.username).await
+        db::article::favorite_article(self.conn.as_ref().unwrap(), slug, &claims.username).await
     }
 
-    pub async fn unfavorite_article(&self, token: &str, unfavorite_by: filters::ArticleFilterByValues) -> Result<ArticleResponse, BackendError> {
+    pub async fn unfavorite_article(&self, token: &str, slug: &str) -> Result<ArticleResponse, BackendError> {
         let claims = auth::Auth::authenticate(token, self.secret())?;
 
-        db::article::unfavorite_article(self.conn.as_ref().unwrap(), unfavorite_by, &claims.username).await
+        db::article::unfavorite_article(self.conn.as_ref().unwrap(), slug, &claims.username).await
     }
 
     pub async fn feed_articles(&self, 
@@ -268,37 +256,18 @@ impl Server {
 
     pub async fn add_comment(&self, 
         token: &str, 
-        article_filter: filters::ArticleFilterByValues,
-        comment: AddCommentRequest
+        add_comment_req: requests::article::AddCommentRequest<'_>
     ) -> Result<CommentResponse, BackendError> {
-        let claims = auth::Auth::authenticate(token, self.secret())?;
-        let comment_author = &claims.username;
 
-        db::article::add_comment(self.conn.as_ref().unwrap(), article_filter, comment_author, comment).await
-    }
+        let add_req_auth = &add_comment_req.authenticate(token, self.secret())?;
 
-    pub async fn get_comments(&self, 
-//        token_opt: Option<&str>, 
-        comments_filter: filters::CommentFilterByValues<'_>,
-        order_by: filters::OrderByFilter<'_>,
-        limit_offset: filters::LimitOffsetFilter,
-    ) -> Result<MultipleCommentResponse, BackendError> {
-//        let claims = auth::Auth::authenticate(token, self.secret())?;
-/*        let tmp = token_opt
-            .and_then(|token| 
-                auth::Auth::authenticate(token, self.secret())
-                    .ok()
-                    .and_then(|claims| Some(claims.username))
-            );
-        // author is an Option, can be None
-        filter.author = tmp.as_deref();
-*/    
- //       let author = &claims.username;
+        let comment_filter = filters::CommentFilterByValues::default()
+            .article_slug(add_req_auth.article_request.article_slug);
+        let comment_author = &add_req_auth.author;
+        let comment_body = &add_req_auth.article_request.body;
 
-
-        let comments = db::article::get_comments(self.conn.as_ref().unwrap(), comments_filter, order_by, limit_offset)
-            .await?;
-        Ok(MultipleCommentResponse { comments } )
+        db::article::add_comment(self.conn.as_ref().unwrap(), comment_filter, comment_author,
+        comment_body).await
     }
 
     pub async fn delete_comment(&self, 
@@ -315,7 +284,6 @@ impl Server {
         // if no comment has been deleted, check if user is authorized to do so    
         if 0 == query_res.rows_affected() {
 
- //           if let Some(id) = id_opt {
             let filter = filters::CommentFilterByValues::default().id(id);
 
             let comments = db::article::get_comments(self.conn.as_ref().unwrap(), 
@@ -338,69 +306,23 @@ impl Server {
                     },
                 Err(err) => Err(err)
             }
-//         } else {
-    //            Err(BackendError::UnexpectedError("tried to delete comment without id".to_string()))
-      //      } 
-    
         } else {
             Ok(())
         }
     }
 
+    pub async fn get_comments(&self, slug: &str) -> Result<MultipleCommentResponse, BackendError> {
+        let filter = filters::CommentFilterByValues::default().article_slug(slug);
+        let order_by = filters::OrderByFilter::Descending("id");
+        let limit_offset: filters::LimitOffsetFilter = filters::LimitOffsetFilter::default();
+    
+        let comments = db::article::get_comments(
+            self.conn.as_ref().unwrap(), filter, order_by, limit_offset)
+            .await?;
+        Ok(MultipleCommentResponse { comments } )
+    }
+
     pub async fn get_tags(&self) -> Result<TagList, BackendError> {
         db::article::get_tags(self.conn.as_ref().unwrap()).await 
-    }
-    
+    }   
 }
-
-
-/*
-impl Server {
-    pub fn service(&self, service_kind: Services) -> impl Service {
-        use Services::*;
-
-        match service_kind {
-            RegisterUser(user_reg) => RegisterUserService { 
-                user_reg, 
-                secret: self.secret(),
-                conn: self.conn.as_ref().unwrap(), 
-            },
-            _ => unimplemented!(),
-        }
-    }
-}
-
-pub(crate) struct RegisterUserService {
-    user_reg: UserReg,
-    secret: &'static [u8],
-    conn: &'static SqlitePool,
-}
-
-#[async_trait]
-impl Service for RegisterUserService {
-    type ResultType = User;
-
-    async fn execute(&self) -> Result<Self::ResultType, crate::errors::BackendError> {
-        match self.user_reg.validate() {
-            Ok(_) => (),
-            Err(err) => return FromValidatorError::from(err).into(),
-        };
-    
-        let res = match db::user::register_user(self.conn.as_ref().unwrap(), &self.user_reg).await {
-            Ok(()) => {
-                let mut user: User = self.user_reg.into();
-    //            auth::Auth::create_token(&mut user)?;
-                user.token = Some(auth::Auth::create_token(&user, &self.secret)?);
-                Ok(user)
-//                Ok(json!(user.wrap()).into())
-            },
-            Err(err) => err.into(),
-        };
-        res          
-    }
-
-    fn auth(mut self, _: &str) -> Self {
-        self
-    }
-}
-*/

@@ -1,10 +1,8 @@
 use tide::prelude::*;
-use crate::requests::{article::*, user::*};
+use crate::requests::{article::*};
 
 pub trait Filter: std::fmt::Display + Default {}
 
-//#[derive(Deserialize)]
-//#[serde(default)]
 pub(crate) struct UserFilter<'a> {
     pub username: Option<&'a str>,
     pub email: Option<&'a str>,
@@ -176,6 +174,24 @@ impl std::fmt::Display for UpdateArticleFilter<'_> {
     }
 }
 
+impl<'a> From<&'a DeleteArticleRequestAuthenticated<'_>> for UpdateArticleFilter<'a> {
+    fn from(req: &'a DeleteArticleRequestAuthenticated) -> Self {
+        Self {
+            slug: req.article_request.slug,
+            author: &req.author,
+        }
+    }
+}
+
+impl<'a> From<&'a UpdateArticleRequestAuthenticated<'_>> for UpdateArticleFilter<'a> {
+    fn from(req: &'a UpdateArticleRequestAuthenticated) -> Self {
+        Self {
+            slug: req.article_request.slug,
+            author: &req.author,
+        }
+    }
+}
+
 pub enum OrderByFilter<'a> {
     #[allow(dead_code)]
     Ascending(&'a str),
@@ -230,6 +246,15 @@ impl Default for CommentFilterByValues<'_> {
     }
 }
 
+impl<'a> From<&'a AddCommentRequestAuthenticated<'_>> for CommentFilterByValues<'a> {
+    fn from(req: &'a AddCommentRequestAuthenticated) -> Self {
+        Self {
+            id: None,
+            article_slug: Some(req.article_request.article_slug),
+            author: Some(&req.author),
+        }
+    }
+}
 impl<'a> From<&'a DeleteCommentRequestAuthenticated<'_>> for CommentFilterByValues<'a> {
     fn from(req: &'a DeleteCommentRequestAuthenticated) -> Self {
         Self {
