@@ -9,16 +9,42 @@ use scrypt::{
 
 use crate::{requests, errors::BackendError};
 
-#[derive(Debug, Serialize, Clone)]
 #[derive(sqlx::FromRow)]
-pub struct User {
+pub(crate) struct User {
     pub email: String,    
-    pub token: Option<String>,    
+//    pub token: Option<String>,    
     pub username: String,    
     pub bio: String,    
     pub image: Option<String>, 
-    #[serde(skip_serializing)]
+//    #[serde(skip_serializing)]
     pub(crate) hashed_password: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct LoggedInUser {
+    // these should be private fields with public getters
+    pub email: String,    
+    pub token: String,    
+    pub username: String,    
+    pub bio: String,    
+    pub image: Option<String>, 
+}
+
+impl LoggedInUser {
+    // consume token here
+    pub(crate) fn from_user_and_token(user: User, token: String) -> Self {
+        Self {
+            email: user.email,
+            username: user.username,
+            bio: user.bio,
+            image: user.image,
+            token
+        }
+    }
+
+    pub(crate) fn wrap(self) -> UserWrapped {
+        UserWrapped { user: self }
+    }
 }
 
 impl TryFrom<requests::user::UserReg> for User {
@@ -35,7 +61,7 @@ impl TryFrom<requests::user::UserReg> for User {
             username: user_reg.username,
             email: user_reg.email,
             hashed_password: hash.to_string(),
-            token: None,
+//            token: None,
             bio: "".to_string(), 
             image: None,
         })
@@ -43,23 +69,27 @@ impl TryFrom<requests::user::UserReg> for User {
 }
 
 impl User {
-    pub(crate) fn wrap(self) -> UserWrapped {
-        UserWrapped { user: self }
-    }
-
-    pub(crate) fn verify(&self, password: &str) -> Result<(), BackendError> {
+    pub(crate) fn verify(self, password: &str, secret: &[u8]) -> Result<LoggedInUser, BackendError> {
         let hash = PasswordHash::new(&self.hashed_password)
             .map_err(|_| BackendError::UnexpectedError("could not parse hashed user password".to_string()))?;
 
         Scrypt
             .verify_password(password.as_bytes(), &hash)
-            .map_err(|_| BackendError::IncorrectUsernameOrPassword(self.email.clone()))
+            .map_err(|_| BackendError::IncorrectUsernameOrPassword(self.email.clone()))?;
+        
+        Ok( LoggedInUser  { 
+            token: crate::auth::Auth::create_token(&self, secret)?,    
+            email: self.email,    
+            username: self.username,    
+            bio: self.bio,    
+            image: self.image,      
+        }) 
     }
 }
 
 #[derive(Debug, Serialize)]
 pub(crate) struct UserWrapped {
-    pub user: User,
+    pub user: LoggedInUser,
 }
 
 #[derive(Debug, Serialize, Clone)]

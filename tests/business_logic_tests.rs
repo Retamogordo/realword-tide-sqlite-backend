@@ -83,7 +83,7 @@ async fn tests() -> Result<(), errors::BackendError> {
     // current user by token
     print!("getting user by JWT token ...").await;
     let scott_smith_current = server.user_by_token(
-        scott_smith_logged_in.token.as_ref().unwrap()).await?;
+        &scott_smith_logged_in.token).await?;
     assert_eq!(scott_smith_current.username, "scott_smith");
     println!(" done, username: {}.", scott_smith_current.username).await;
 
@@ -102,7 +102,7 @@ async fn tests() -> Result<(), errors::BackendError> {
     let james_joyce_bio = "Im writing a novel";
     set_profile_james_joyce.bio = Some(james_joyce_bio.to_string());
     print!("updating users {} profile...", james_joyce_logged_in.username).await;
-    let profile_james_joyce = server.update_user(james_joyce_logged_in.token.as_ref().unwrap(), set_profile_james_joyce)
+    let profile_james_joyce = server.update_user(&james_joyce_logged_in.token, set_profile_james_joyce)
         .await?;
     assert_eq!(profile_james_joyce.bio, james_joyce_bio.to_string());
     println!(" done, updated bio: {}", profile_james_joyce.bio).await;
@@ -114,7 +114,7 @@ async fn tests() -> Result<(), errors::BackendError> {
     
     // smith follows joyce
     print!("{} follows user {} ...", scott_smith_logged_in.username, james_joyce_logged_in.username).await;
-    let james_joyce_profile = server.follow(scott_smith_logged_in.token.as_ref().unwrap(), 
+    let james_joyce_profile = server.follow(&scott_smith_logged_in.token, 
         "james_joyce").await?;
     assert_eq!(james_joyce_profile.username, "james_joyce");
     println!(" done, followed user is {}.", profile_james_joyce.username).await;
@@ -129,7 +129,7 @@ async fn tests() -> Result<(), errors::BackendError> {
     };
     print!("{} creates an article ...", james_joyce_logged_in.username).await;
     let article_response1 = server.create_article(
-        james_joyce_logged_in.token.as_ref().unwrap(), 
+        &james_joyce_logged_in.token, 
         create_article).await?;
     
     assert_eq!(james_joyce_profile.username, article_response1.author.as_ref().unwrap().username);    
@@ -145,7 +145,7 @@ async fn tests() -> Result<(), errors::BackendError> {
         tag_list: Some(vec!["Dublin".to_string(), "Stream".to_string()]),
     };
     let article_response2 = server.create_article(
-        james_joyce_logged_in.token.as_ref().unwrap(), 
+        &james_joyce_logged_in.token, 
         create_article).await?;
     println!(" done, title: {}.", article_response2.article.title).await;
     // test registered tags
@@ -195,7 +195,7 @@ async fn tests() -> Result<(), errors::BackendError> {
     };
     print!("{} creates an article ...", graham_greene_logged_in.username).await;
     let article_response3 = server.create_article(
-        graham_greene_logged_in.token.as_ref().unwrap(), 
+        &graham_greene_logged_in.token, 
         create_article
     ).await?;
     println!(" done, title: {}.", article_response3.article.title).await;
@@ -203,7 +203,7 @@ async fn tests() -> Result<(), errors::BackendError> {
     // scott smith tries to favorite article by greene
     let slug ="the-quiet-american";
     print!("{} favorites an article {}...", scott_smith_logged_in.username, slug).await;
-    let article_response = server.favorite_article(scott_smith_logged_in.token.as_ref().unwrap(), 
+    let article_response = server.favorite_article(&scott_smith_logged_in.token, 
         slug)
         .await?;
     assert_eq!(article_response.article.favorited, true);
@@ -213,7 +213,7 @@ async fn tests() -> Result<(), errors::BackendError> {
     let slug = "the-quiet-american";
     // james joyce tries to favorite article by greene
     print!("{} favorites article {}...", james_joyce_logged_in.username, slug).await;
-    let article_response = server.favorite_article(james_joyce_logged_in.token.as_ref().unwrap(), 
+    let article_response = server.favorite_article(&james_joyce_logged_in.token, 
         slug)
         .await?;
     assert_eq!(article_response.article.favorited, true);
@@ -222,7 +222,7 @@ async fn tests() -> Result<(), errors::BackendError> {
 
     let slug = "the-quiet-american";
     print!("{} unfavorites article {}...", james_joyce_logged_in.username, slug).await;
-    let article_response = server.unfavorite_article(james_joyce_logged_in.token.as_ref().unwrap(), 
+    let article_response = server.unfavorite_article(&james_joyce_logged_in.token, 
         slug)
         .await?;
     assert_eq!(article_response.article.favorited, true);
@@ -231,7 +231,7 @@ async fn tests() -> Result<(), errors::BackendError> {
 
     // smith follows greene
     print!("{} follows user {}...", scott_smith_logged_in.username, graham_greene_logged_in.username).await;
-    let graham_green_profile = server.follow(scott_smith_logged_in.token.as_ref().unwrap(), 
+    let graham_green_profile = server.follow(&scott_smith_logged_in.token, 
         "graham_greene").await?;
     assert_eq!(graham_green_profile.username, "graham_greene");
     println!(" done.").await;
@@ -239,7 +239,7 @@ async fn tests() -> Result<(), errors::BackendError> {
     // feeds articles for smith
     print!("feed articles for user {}...", scott_smith_logged_in.username).await;
     let articles_fed_for_scott_smith = server.feed_articles(
-        scott_smith_logged_in.token.as_ref().unwrap(), 
+        &scott_smith_logged_in.token, 
         filters::LimitOffsetFilter::default(),
     )
     .await?; 
@@ -253,7 +253,7 @@ async fn tests() -> Result<(), errors::BackendError> {
     };
     print!("{} updates article {}...", graham_greene_logged_in.username, update_article_req.slug).await;
     server.update_article(
-        graham_greene_logged_in.token.as_ref().unwrap(), 
+        &graham_greene_logged_in.token, 
         update_article_req,
     )
     .await?;
@@ -277,7 +277,7 @@ async fn tests() -> Result<(), errors::BackendError> {
     // try forbidden article deleteting
     print!("{} deletes article {}...", scott_smith_logged_in.username, "the-calm-american").await;
     server.delete_article(
-        scott_smith_logged_in.token.as_ref().unwrap(), 
+        &scott_smith_logged_in.token, 
         "the-calm-american",
     )
     .await
@@ -291,7 +291,7 @@ async fn tests() -> Result<(), errors::BackendError> {
     };
     print!("{} updates article {}...", scott_smith_logged_in.username, update_article_req.slug).await;    
     server.update_article(
-        scott_smith_logged_in.token.as_ref().unwrap(), 
+        &scott_smith_logged_in.token, 
         update_article_req,
     )
     .await
@@ -301,7 +301,7 @@ async fn tests() -> Result<(), errors::BackendError> {
     // try deleting non-existing article
     print!("{} deletes non-existing article ...", scott_smith_logged_in.username).await;
     server.delete_article(
-        scott_smith_logged_in.token.as_ref().unwrap(), 
+        &scott_smith_logged_in.token, 
         "dummy",
     )
     .await
@@ -315,7 +315,7 @@ async fn tests() -> Result<(), errors::BackendError> {
     };
     print!("{} updates non-existing article ...", scott_smith_logged_in.username).await;
     server.update_article(
-        graham_greene_logged_in.token.as_ref().unwrap(), 
+        &graham_greene_logged_in.token, 
         update_article_req,
     )
     .await
@@ -331,7 +331,7 @@ async fn tests() -> Result<(), errors::BackendError> {
     print!("{} adds a comment to article {}...", scott_smith_logged_in.username, 
         comment_req.article_slug).await;
     server.add_comment(
-        scott_smith_logged_in.token.as_ref().unwrap(), 
+        &scott_smith_logged_in.token, 
         comment_req
     )
     .await?;
@@ -344,7 +344,7 @@ async fn tests() -> Result<(), errors::BackendError> {
     print!("{} adds a comment to article {}...", scott_smith_logged_in.username, 
         comment_req.article_slug).await;
     server.add_comment(
-        scott_smith_logged_in.token.as_ref().unwrap(), 
+        &scott_smith_logged_in.token, 
         comment_req
     )
     .await?;
@@ -357,7 +357,7 @@ async fn tests() -> Result<(), errors::BackendError> {
     print!("{} adds a comment to article {}...", james_joyce_logged_in.username, 
         comment_req.article_slug).await;
     server.add_comment(
-        james_joyce_logged_in.token.as_ref().unwrap(), 
+        &james_joyce_logged_in.token, 
         comment_req
     )
     .await?;
@@ -370,7 +370,7 @@ async fn tests() -> Result<(), errors::BackendError> {
     print!("{} adds a comment to article {}...", graham_greene_logged_in.username, 
         comment_req.article_slug).await;
     let last_comment = server.add_comment(
-        graham_greene_logged_in.token.as_ref().unwrap(), 
+        &graham_greene_logged_in.token, 
         comment_req
     )
     .await?;
@@ -390,7 +390,7 @@ async fn tests() -> Result<(), errors::BackendError> {
     print!("{} deletes a comment to article {}...", graham_greene_logged_in.username, 
         delete_by.article_slug).await;
     server.delete_comment(
-        graham_greene_logged_in.token.as_ref().unwrap(), 
+        &graham_greene_logged_in.token, 
         delete_by,
     )
     .await?;
@@ -410,7 +410,7 @@ async fn tests() -> Result<(), errors::BackendError> {
     print!("{} deletes a (not owned) comment to article {}...", 
         graham_greene_logged_in.username, delete_by.article_slug).await;
     server.delete_comment(
-        graham_greene_logged_in.token.as_ref().unwrap(), 
+        &graham_greene_logged_in.token, 
         delete_by,
     )
     .await

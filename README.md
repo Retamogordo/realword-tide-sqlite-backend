@@ -37,7 +37,13 @@ Build and run backend
 ```sh
 cargo run
 ```
+### Configuration
+You can run app with fresh database by setting DROP_DATABASE=1 in .env file.
+Database location and host and port are configurable as well.
+
 ### Testing
+Note: registering and logging in take some seconds because password hashing is CPU
+consuming.
 #### Postman testing 
 Configure HOST=127.0.0.1 or delete HOST from .env and set HTTP_PORT=3000
 and execute
@@ -47,7 +53,7 @@ cargo run
 #### Integration Test
 These tests do not cover http requests parsing, instead they 
 introduce business logic testing steps by artificially forming 
-middle layer server requests thus simulating local loop without involving tide.
+middle layer server requests thus simulating local loop without involving tide framework.
 Execute
 ```sh
 cargo test -- --nocapture

@@ -31,20 +31,21 @@ impl Server {
         self.config.secret.as_bytes()
     }
 
-    pub async fn register_user(&self, user_reg: requests::user::UserReg) -> Result<User, BackendError> {
-
+    pub async fn register_user(&self, user_reg: requests::user::UserReg) 
+    -> Result<LoggedInUser, BackendError> {
+        let password = user_reg.password.clone();
         let user_to_reg = User::try_from(user_reg)?;
 
-        let mut user = db::user::register_user(self.conn.as_ref().unwrap(), &user_to_reg).await?;
-        // login by creating token
-        user.token = Some(auth::Auth::create_token(&user, self.secret())?);
-        Ok(user)
+        let user = db::user::register_user(self.conn.as_ref().unwrap(), &user_to_reg).await?;
+
+        user.verify(&password, self.secret())
     }
 
-    pub async fn login_user(&self, login_req: requests::user::LoginRequest) -> Result<User, BackendError> {
+    pub async fn login_user(&self, login_req: requests::user::LoginRequest) 
+        -> Result<LoggedInUser, BackendError> {
         let user_by = filters::UserFilter::default().email(&login_req.email);
 
-        let mut user = db::user::get_user(self.conn.as_ref().unwrap(), user_by)
+        let user = db::user::get_user(self.conn.as_ref().unwrap(), user_by)
             .await
             .map_err(|err| 
                 match err {
@@ -54,20 +55,16 @@ impl Server {
                 }
             )?;
 
-        user.verify(&login_req.password)?;
-
-        user.token = Some(auth::Auth::create_token(&user, self.secret())?);
-
-        Ok(user)
+        user.verify(&login_req.password, self.secret())
     }
 
-    pub async fn user_by_token(&self, token: &str) -> Result<User, BackendError> {
+    pub async fn user_by_token(&self, token: &str) -> Result<LoggedInUser, BackendError> {
         let claims = auth::Auth::authenticate(token, self.secret())?;
         let filter = filters::UserFilter::default().username(&claims.username);
 
-        let mut user = db::user::get_user(self.conn.as_ref().unwrap(), filter).await?;
-        user.token = Some(token.to_string());
-        Ok(user)
+        let user = db::user::get_user(self.conn.as_ref().unwrap(), filter).await?;
+
+        Ok(LoggedInUser::from_user_and_token(user, token.to_string()))
     }
 
     pub async fn profile(&self, username: &str) -> Result<Profile, BackendError> {
@@ -76,14 +73,16 @@ impl Server {
             .ok_or(BackendError::NoUserFound(username.to_string()))
     }
 
-    pub async fn update_user(&self, token: &str, update_user_req: requests::user::UserUpdateRequest) -> Result<User, BackendError> {
+    pub async fn update_user(&self, 
+        token: &str, 
+        update_user_req: requests::user::UserUpdateRequest) -> Result<LoggedInUser, BackendError> {
         let claims = auth::Auth::authenticate(token, self.secret())?;
         let filter = filters::UpdateUserFilter::default().username(&claims.username);
         let update_user = UserUpdate::from(&update_user_req);
 
-        let mut user = db::user::update_user(self.conn.as_ref().unwrap(), &update_user, filter).await?;
-        user.token = Some(token.to_string());
-        Ok(user)
+        let user = db::user::update_user(self.conn.as_ref().unwrap(), &update_user, filter).await?;
+
+        Ok(LoggedInUser::from_user_and_token(user, token.to_string()))
     }
 
     pub async fn follow(&self, token: &str, celeb_name: &str) -> Result<Profile, BackendError> {
