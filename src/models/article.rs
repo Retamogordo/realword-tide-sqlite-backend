@@ -71,17 +71,10 @@ impl UpdateArticle {
         self.title.as_ref().and_then(|title| Some(slugify!(title)))
     }
 }
-/*
-impl UpdateArticle {
-    pub fn updated_slug(&self) -> Option<&str> {
-        self.slug_from_title.as_deref()
-    }
-}
-*/
+
 impl std::fmt::Display for UpdateArticle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.title.as_ref().map(|val| 
-//            write!( f, " {}='{}' , {}='{}'", "title", val, "slug", self.slug_from_title.as_ref().unwrap()) ).unwrap_or(Ok(()))?;
             write!( f, " {}='{}', {}='{}', ", "title", val, "slug", slugify!(val)) ).unwrap_or(Ok(()))?;
         self.description.as_ref().map(|val| write!( f, " {}='{}', ", "description", val) ).unwrap_or(Ok(()))?;
         self.body.as_ref().map(|val| write!( f, " {}='{}', ", "body", val) ).unwrap_or(Ok(()))?;

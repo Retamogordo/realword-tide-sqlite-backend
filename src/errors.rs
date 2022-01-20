@@ -5,7 +5,6 @@ const SQLITE_CONSTRAINT_UNIQUE: &str = "2067";
 
 #[derive(Debug, Serialize)]
 pub enum BackendError {
-//    InvalidEmail,
     UsernameOrEmailExists,
     TokenCreationFailure(String),
     ValidationError(String),

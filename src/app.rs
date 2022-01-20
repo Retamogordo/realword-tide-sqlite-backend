@@ -13,26 +13,14 @@ pub(crate) struct AppState {
 
 #[derive(Debug)]
 pub struct App {
-//    config: Config,
-//    state: Option<AppState>,
 }
 
 impl App {
-/*    
-    pub fn with_config(config: Config) -> Self {
-        let state = AppState { server: backend::Server::with_config(config) };
-        Self { state: Some(state) }
-    } 
-*/
     pub fn new() -> Self {
         Self {}
     }
     
     pub async fn run(&'static self) -> std::result::Result<(), crate::errors::BackendError> {
- /*       let conn = crate::db::connect(&self.config)
-            .await
-            .expect("failed to connect to sqlite database. ");
-*/
         let cfg = Config::from_env();
         let http_cfg = HttpConfig::from_env();
 
@@ -62,7 +50,6 @@ impl App {
         app.at("/api/articles/:slug/comments/:id").delete(delete_comment);
         app.at("/api/tags").get(get_tags);
      
-//        app.listen("127.0.0.1:3000").await?;
         let hp = format!("{}:{}", http_cfg.host, http_cfg.http_port); 
         app.listen(hp).await?;
     

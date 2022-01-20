@@ -27,13 +27,10 @@ impl TryFrom<requests::user::UserReg> for User {
         user_reg.validate()?;
 
         let salt = SaltString::generate(&mut OsRng);
-        let hash = match Scrypt.hash_password(user_reg.password.as_bytes(), &salt) {
-            Ok(hash) => hash,
-            Err(_) => { return 
-                Err(crate::errors::BackendError::UnexpectedError("could not register user".to_string())); 
-            } 
-        }; 
-            
+        let hash = Scrypt.hash_password(user_reg.password.as_bytes(), &salt)
+            .map_err(|_| BackendError::UnexpectedError("could not register user".to_string())
+        )?;
+
         Ok( Self {
             username: user_reg.username,
             email: user_reg.email,
