@@ -13,11 +13,43 @@ We've gone to great lengths to adhere to the **[YOUR_FRAMEWORK]** community styl
 For more information on how to this works with other frontends/backends, head over to the [RealWorld](https://github.com/gothinkster/realworld) repo.
 
 
-# How it works
+### How it works
+This backend leverages rusts' [tide](https://docs.rs/tide/latest/tide/) 
+framework for implementing the web app, and sqlite database managed as a
+single file.
+Simple configuration is available through .env file.
 
-> Describe the general architecture of your app here
+### Getting started
 
-# Getting started
+Install [rust](https://www.rust-lang.org/en-US/install.html)
+```sh
+# download rustup and install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+Download and install [sqlite](https://www.sqlite.org/download.html) 
+```sh
+# for Ubuntu:
+apt-get install sqlite3
+```
+Configure backend by editing .env file
 
-> npm install, npm start, etc.
+Build and run backend
+```sh
+cargo run
+```
+### Testing
+#### Postman testing 
+Configure HOST=127.0.0.1 or delete HOST from .env and set HTTP_PORT=3000
+and execute
+```sh
+cargo run
+```
+#### Integration Test
+These tests do not cover http requests parsing, instead they 
+introduce business logic testing steps by artificially forming 
+middle layer server requests thus simulating local loop without involving tide.
+Execute
+```sh
+cargo test -- --nocapture
+```
 
